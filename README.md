@@ -148,11 +148,16 @@ To disable caching entirely, pass `--no-cache`.
 | `--precision` | `int8` | Model precision (`int8` or `fp32`) |
 | `--temperature` | `0.7` | Sampling temperature |
 | `--lsd-steps` | `1` | Flow matching ODE solver steps |
+| `--eos-threshold` | `-4.0` | EOS detection threshold (lower = later cutoff) |
+| `--eos-extra` | `-1` | Extra frames after EOS (`-1` = auto from text length) |
+| `--noise-clamp` | `0` | Clamp noise magnitude (`0` = disabled, matches upstream) |
 | `--threads` | `0` | Total thread budget (`0` = half of available cores) |
 | `--models-dir` | `models` | Path to ONNX model directory |
 | `--voices-dir` | `voices` | Path to voice samples directory |
+| `--tokenizer` | `models/tokenizer.model` | Path to SentencePiece tokenizer |
 | `--no-cache` | — | Disable all disk caching (`.emb` and `.kv` files) |
 | `--stdout` | — | Output raw f32le PCM to stdout |
+| `--verbose` | — | Enable verbose output |
 | `--profile` | — | Print per-operation timing report after generation |
 | `--server` | — | Start HTTP server mode |
 | `--port` | `8080` | Server port |
