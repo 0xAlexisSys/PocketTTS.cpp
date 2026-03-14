@@ -130,7 +130,13 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 endif()
 
 # Copy ONNX runtime shared library next to outputs
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    add_custom_command(TARGET pocket-tts POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll
+            $<TARGET_FILE_DIR:pocket-tts>
+    )
+else()
     add_custom_command(TARGET pocket-tts POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ONNXRUNTIME_LIB} $<TARGET_FILE_DIR:pocket-tts>
     )
@@ -169,7 +175,13 @@ if(BUILD_SHARED_LIB)
         target_link_libraries(pocket-tts-lib PRIVATE ws2_32)
     endif()
 
-    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        add_custom_command(TARGET pocket-tts-lib POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll
+                $<TARGET_FILE_DIR:pocket-tts-lib>
+        )
+    else()
         add_custom_command(TARGET pocket-tts-lib POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ONNXRUNTIME_LIB} $<TARGET_FILE_DIR:pocket-tts-lib>
         )

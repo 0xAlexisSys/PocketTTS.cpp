@@ -8,6 +8,9 @@
 // ── Platform (must come first — winsock2.h before windows.h) ────────────────
 
 #ifdef _WIN32
+  #ifndef NOMINMAX
+    #define NOMINMAX
+  #endif
   #ifndef _CRT_SECURE_NO_WARNINGS
     #define _CRT_SECURE_NO_WARNINGS
   #endif
@@ -225,7 +228,7 @@ static std::vector<float> resample(const std::vector<float>& in, int src, int ds
     double ratio = double(dst) / src;
     std::vector<float> out(size_t(in.size() * ratio));
     
-    auto sinc = [](float x) { return std::abs(x) < 1e-6f ? 1.0f : std::sin(PI * x) / (PI * x); };
+    auto sinc = [&](float x) { return std::abs(x) < 1e-6f ? 1.0f : std::sin(PI * x) / (PI * x); };
     auto lanczos = [&](float x) { return std::abs(x) >= K ? 0.0f : sinc(x) * sinc(x / K); };
     
     for (size_t i = 0; i < out.size(); ++i) {
@@ -551,6 +554,19 @@ static Ort::Env& get_ort_env() {
     return env;
 }
 
+// Convert std::string path to ORTCHAR_T string (wchar_t on Windows, char elsewhere)
+static std::basic_string<ORTCHAR_T> to_ort_path(const std::string& s) {
+#ifdef _WIN32
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    if (n <= 0) throw std::runtime_error("Failed to widen path: " + s);
+    std::wstring w(n - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
+    return w;
+#else
+    return s;
+#endif
+}
+
 // ── OrtSession ──────────────────────────────────────────────────────────────
 // Thin wrapper around Ort::Session that caches input/output names and shapes.
 
@@ -564,7 +580,7 @@ class OrtSession {
     
 public:
     OrtSession(Ort::Env& env, const std::string& path, const Ort::SessionOptions& opts, const std::string& name = "")
-        : sess_(env, path.c_str(), opts), name_(name.empty() ? path : name) {
+        : sess_(env, to_ort_path(path).c_str(), opts), name_(name.empty() ? path : name) {
         Ort::AllocatorWithDefaultOptions alloc;
         
         size_t num_in = sess_.GetInputCount();
