@@ -163,6 +163,7 @@ struct Config {
     std::string models_dir = "models", tokenizer_path = "models/tokenizer.model";
     std::string voices_dir = "voices";
     std::string precision = "int8";
+    uint64_t seed = 0;
     float temperature = 0.7f;
     float eos_threshold = -4.0f;
     float noise_clamp = 0.0f;
@@ -1396,7 +1397,7 @@ public:
     static constexpr int SR = 24000;
     
     explicit PocketTTS(const Config& cfg = {}) : cfg_(cfg) {
-        rng::seed(uint64_t(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+        rng::seed(cfg.seed == 0 ? uint64_t(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : cfg.seed);
         tok_ = std::make_unique<Tokenizer>(cfg_.tokenizer_path);
         
         // Thread budget: --threads sets the total. During pipelined streaming,
@@ -2557,13 +2558,14 @@ extern "C" {
 
 void* ptt_create(const char* models_dir, const char* voices_dir,
                  const char* tokenizer_path, const char* precision,
-                 float temperature, int lsd_steps, int num_threads) {
+                 uint64_t seed, float temperature, int lsd_steps, int num_threads) {
     try {
         pocket_tts::Config cfg;
         if (models_dir) cfg.models_dir = models_dir;
         if (voices_dir) cfg.voices_dir = voices_dir;
         if (tokenizer_path) cfg.tokenizer_path = tokenizer_path;
         if (precision) cfg.precision = precision;
+        cfg.seed = seed;
         cfg.temperature = temperature;
         cfg.lsd_steps = lsd_steps;
         cfg.num_threads = num_threads;
@@ -2702,6 +2704,7 @@ int main(int argc, char* argv[]) {
                 "       " << argv[0] << " --server [OPTIONS]\n"
                 "\nOptions:\n"
                 "  --precision <int8|fp32>  Model precision (default: int8)\n"
+                "  --seed <ulong>           Inference seed (default: 0 = random)\n"
                 "  --temperature <float>    Sampling temperature (default: 0.7)\n"
                 "  --lsd-steps <int>        Flow matching steps (default: 1)\n"
                 "  --threads <int>          Total thread budget (default: 0 = half cores)\n"
@@ -2724,6 +2727,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else if (a == "--precision") cfg.precision = next();
+        else if (a == "--seed") cfg.seed = std::stoul(next());
         else if (a == "--temperature") cfg.temperature = std::stof(next());
         else if (a == "--lsd-steps") cfg.lsd_steps = std::stoi(next());
         else if (a == "--threads") cfg.num_threads = std::stoi(next());
