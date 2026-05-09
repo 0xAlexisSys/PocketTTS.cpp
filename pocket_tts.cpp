@@ -94,15 +94,15 @@ static size_t calc_numel(const std::vector<int64_t>& shape) {
 struct Tensor {
     std::vector<int64_t> shape;
     std::vector<float> data;
-    
+
     Tensor() = default;
     Tensor(std::vector<int64_t> s) : shape(std::move(s)), data(calc_numel(shape), 0.0f) {}
     Tensor(std::vector<float> d, std::vector<int64_t> s) : shape(std::move(s)), data(std::move(d)) {}
-    
+
     size_t numel() const { return data.size(); }
     float* ptr() { return data.data(); }
     const float* ptr() const { return data.data(); }
-    
+
     Tensor& reshape(std::vector<int64_t> ns) {
         int64_t neg = -1, known = 1;
         for (size_t i = 0; i < ns.size(); ++i) {
@@ -113,7 +113,7 @@ struct Tensor {
         shape = std::move(ns);
         return *this;
     }
-    
+
     Tensor squeeze(int64_t dim = -1) const {
         std::vector<int64_t> ns;
         for (size_t i = 0; i < shape.size(); ++i)
@@ -121,21 +121,21 @@ struct Tensor {
         if (ns.empty()) ns.push_back(1);
         return Tensor(data, ns);
     }
-    
+
     static Tensor concat(const std::vector<Tensor>& ts, int64_t dim) {
         if (ts.empty()) throw std::runtime_error("Cannot concat empty list");
         if (dim < 0) dim += ts[0].shape.size();
-        
+
         std::vector<int64_t> os = ts[0].shape;
         int64_t total = 0;
         for (const auto& t : ts) total += t.shape[dim];
         os[dim] = total;
-        
+
         Tensor r(os);
         int64_t outer = 1, inner = 1;
         for (int64_t i = 0; i < dim; ++i) outer *= os[i];
         for (size_t i = dim + 1; i < os.size(); ++i) inner *= os[i];
-        
+
         int64_t off = 0;
         for (const auto& t : ts) {
             int64_t td = t.shape[dim], chunk = td * inner;
@@ -146,7 +146,7 @@ struct Tensor {
         }
         return r;
     }
-    
+
 };
 
 struct TensorI64 {
@@ -227,10 +227,10 @@ static std::vector<float> resample(const std::vector<float>& in, int src, int ds
     constexpr float PI = 3.14159265358979323846f;
     double ratio = double(dst) / src;
     std::vector<float> out(size_t(in.size() * ratio));
-    
+
     auto sinc = [&](float x) { return std::abs(x) < 1e-6f ? 1.0f : std::sin(PI * x) / (PI * x); };
     auto lanczos = [&](float x) { return std::abs(x) >= K ? 0.0f : sinc(x) * sinc(x / K); };
-    
+
     for (size_t i = 0; i < out.size(); ++i) {
         double sp = i / ratio;
         int64_t c = int64_t(sp);
@@ -255,23 +255,23 @@ static std::vector<float> resample(const std::vector<float>& in, int src, int ds
 static std::vector<std::string> split_sentences(const std::string& text) {
     std::vector<std::string> sentences;
     std::string current;
-    
+
     auto is_abbreviation = [](const std::string& s, size_t dot_pos) -> bool {
         if (dot_pos < 2) return false;
         size_t start = dot_pos;
         while (start > 0 && std::isalpha((unsigned char)s[start - 1])) start--;
         std::string word = s.substr(start, dot_pos - start);
         for (auto& c : word) c = std::tolower((unsigned char)c);
-        return word == "mr" || word == "mrs" || word == "ms" || word == "dr" || 
+        return word == "mr" || word == "mrs" || word == "ms" || word == "dr" ||
                word == "st" || word == "jr" || word == "sr" || word == "vs" ||
                word == "etc" || word == "inc" || word == "ltd" || word == "prof" ||
                word == "gen" || word == "gov" || word == "sgt" || word == "cpl" ||
                word == "pvt" || word == "capt" || word == "lt" || word == "col";
     };
-    
+
     for (size_t i = 0; i < text.size(); ++i) {
         current += text[i];
-        
+
         if ((text[i] == '.' || text[i] == '!' || text[i] == '?')) {
             if (text[i] == '.' && i + 1 < text.size() && text[i + 1] == '.') continue;
             if (text[i] == '.' && i > 0 && text[i - 1] == '.') continue;
@@ -285,14 +285,14 @@ static std::vector<std::string> split_sentences(const std::string& text) {
             }
         }
     }
-    
+
     if (!current.empty()) {
         size_t start = current.find_first_not_of(" \t\n\r");
         if (start != std::string::npos) {
             sentences.push_back(current.substr(start));
         }
     }
-    
+
     return sentences;
 }
 
@@ -312,7 +312,7 @@ static int count_words(const std::string& text) {
 // Returns {prepared_text, eos_extra_frames}.
 static std::pair<std::string, int> prepare_text(const std::string& raw, int cfg_eos_extra) {
     std::string text = raw;
-    
+
     // Strip characters the model can't speak
     std::string cleaned;
     cleaned.reserve(text.size());
@@ -329,7 +329,7 @@ static std::pair<std::string, int> prepare_text(const std::string& raw, int cfg_
     stripUtf8(cleaned, "\xe2\x80\x9c");  // "
     stripUtf8(cleaned, "\xe2\x80\x9d");  // "
     text = cleaned;
-    
+
     // Strip apostrophes/quotes from edges only (preserve contractions like don't, it's)
     while (!text.empty() && (text.front() == '\'' || text.front() == '`')) text.erase(0, 1);
     while (!text.empty() && (text.back() == '\'' || text.back() == '`')) text.pop_back();
@@ -338,31 +338,31 @@ static std::pair<std::string, int> prepare_text(const std::string& raw, int cfg_
     while (text.size() >= 3 && text.substr(0, 3) == "\xe2\x80\x99") text.erase(0, 3);
     while (text.size() >= 3 && text.substr(text.size() - 3) == "\xe2\x80\x98") text.erase(text.size() - 3);
     while (text.size() >= 3 && text.substr(text.size() - 3) == "\xe2\x80\x99") text.erase(text.size() - 3);
-    
+
     // Strip leading/trailing whitespace
     size_t start = text.find_first_not_of(" \t\n\r");
     size_t end = text.find_last_not_of(" \t\n\r");
     if (start == std::string::npos) return {"", cfg_eos_extra >= 0 ? cfg_eos_extra : 3};
     text = text.substr(start, end - start + 1);
-    
+
     // Normalize whitespace
     for (auto& c : text) { if (c == '\n' || c == '\r') c = ' '; }
-    
+
     int nwords = count_words(text);
     int eos_extra = cfg_eos_extra >= 0 ? cfg_eos_extra : ((nwords <= 4) ? 5 : 3);
-    
+
     // Capitalize first letter
     if (!text.empty() && std::islower((unsigned char)text[0]))
         text[0] = std::toupper((unsigned char)text[0]);
-    
+
     // Ensure ends with punctuation
     if (!text.empty() && std::isalnum((unsigned char)text.back()))
         text += '.';
-    
+
     // Pad short text — model doesn't perform well with very few tokens
     if (nwords < 5)
         text = "        " + text;  // 8 spaces, matching Python
-    
+
     return {text, eos_extra};
 }
 
@@ -376,7 +376,7 @@ struct Profiler {
         double total_ms = 0;
         int count = 0;
         double min_ms = 1e9, max_ms = 0;
-        
+
         void add(double ms) {
             total_ms += ms;
             count++;
@@ -385,10 +385,10 @@ struct Profiler {
         }
         double avg_ms() const { return count > 0 ? total_ms / count : 0; }
     };
-    
+
     std::unordered_map<std::string, Timer> timers;
     bool enabled = false;
-    
+
     class ScopedTimer {
         Profiler& prof;
         std::string name;
@@ -404,24 +404,24 @@ struct Profiler {
             }
         }
     };
-    
+
     ScopedTimer time(const std::string& name) { return ScopedTimer(*this, name); }
-    
+
     void report() const {
         std::cout << "\n========== PROFILING REPORT ==========\n";
         std::vector<std::pair<std::string, Timer>> sorted;
         for (const auto& [k, v] : timers) sorted.emplace_back(k, v);
         std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.second.total_ms > b.second.total_ms; });
-        
+
         std::cout << std::fixed << std::setprecision(3);
-        std::cout << std::left << std::setw(35) << "Operation" 
+        std::cout << std::left << std::setw(35) << "Operation"
                   << std::right << std::setw(10) << "Total(ms)"
                   << std::setw(10) << "Count"
                   << std::setw(10) << "Avg(ms)"
                   << std::setw(10) << "Min(ms)"
                   << std::setw(10) << "Max(ms)" << "\n";
         std::cout << std::string(85, '-') << "\n";
-        
+
         for (const auto& [name, t] : sorted) {
             std::cout << std::left << std::setw(35) << name
                       << std::right << std::setw(10) << t.total_ms
@@ -432,7 +432,7 @@ struct Profiler {
         }
         std::cout << "=======================================\n";
     }
-    
+
     void reset() { timers.clear(); }
 };
 
@@ -500,46 +500,46 @@ static bool save_embedding(const std::string& path, const std::vector<int64_t>& 
     if (slash != std::string::npos) {
         mkdir_p(path.substr(0, slash));
     }
-    
+
     std::ofstream f(path, std::ios::binary);
     if (!f) return false;
-    
+
     uint32_t magic = EMB_MAGIC;
     int32_t ndims = static_cast<int32_t>(shape.size());
-    
+
     f.write(reinterpret_cast<const char*>(&magic), 4);
     f.write(reinterpret_cast<const char*>(&ndims), 4);
     f.write(reinterpret_cast<const char*>(shape.data()), ndims * sizeof(int64_t));
     f.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(float));
-    
+
     return f.good();
 }
 
 static bool load_embedding(const std::string& path, std::vector<int64_t>& shape, std::vector<float>& data) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
-    
+
     uint32_t magic;
     int32_t ndims;
-    
+
     f.read(reinterpret_cast<char*>(&magic), 4);
     if (magic != EMB_MAGIC) return false;
-    
+
     f.read(reinterpret_cast<char*>(&ndims), 4);
     if (ndims <= 0 || ndims > 10) return false;
-    
+
     shape.resize(ndims);
     f.read(reinterpret_cast<char*>(shape.data()), ndims * sizeof(int64_t));
-    
+
     size_t numel = 1;
     for (int32_t i = 0; i < ndims; ++i) {
         if (shape[i] <= 0) return false;
         numel *= shape[i];
     }
-    
+
     data.resize(numel);
     f.read(reinterpret_cast<char*>(data.data()), numel * sizeof(float));
-    
+
     return f.good();
 }
 
@@ -577,12 +577,12 @@ class OrtSession {
     std::vector<std::vector<int64_t>> in_shapes_;
     std::vector<ONNXTensorElementDataType> in_types_;
     std::string name_;
-    
+
 public:
     OrtSession(Ort::Env& env, const std::string& path, const Ort::SessionOptions& opts, const std::string& name = "")
         : sess_(env, to_ort_path(path).c_str(), opts), name_(name.empty() ? path : name) {
         Ort::AllocatorWithDefaultOptions alloc;
-        
+
         size_t num_in = sess_.GetInputCount();
         for (size_t i = 0; i < num_in; ++i) {
             auto n = sess_.GetInputNameAllocated(i, alloc);
@@ -592,29 +592,29 @@ public:
             in_shapes_.push_back(tsi.GetShape());
             in_types_.push_back(tsi.GetElementType());
         }
-        
+
         size_t num_out = sess_.GetOutputCount();
         for (size_t i = 0; i < num_out; ++i) {
             auto n = sess_.GetOutputNameAllocated(i, alloc);
             out_names_.push_back(n.get());
         }
-        
+
         for (const auto& n : in_names_) in_ptrs_.push_back(n.c_str());
         for (const auto& n : out_names_) out_ptrs_.push_back(n.c_str());
     }
-    
+
     Ort::Session& session() { return sess_; }
-    
+
     std::vector<Ort::Value> run(const std::vector<Ort::Value>& in) {
         auto _ = g_prof.time("run:" + name_);
         return sess_.Run(Ort::RunOptions{nullptr}, in_ptrs_.data(), in.data(), in.size(), out_ptrs_.data(), out_ptrs_.size());
     }
-    
+
     void run_with_binding(Ort::IoBinding& binding) {
         auto _ = g_prof.time("run:" + name_);
         sess_.Run(Ort::RunOptions{nullptr}, binding);
     }
-    
+
     void print_info() const {
         std::cout << "\n  Model: " << name_ << "\n";
         std::cout << "    Inputs (" << in_names_.size() << "):\n";
@@ -629,7 +629,7 @@ public:
             std::cout << "      [" << i << "] " << out_names_[i] << "\n";
         }
     }
-    
+
     static std::string type_str(ONNXTensorElementDataType t) {
         switch (t) {
             case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT: return "float32";
@@ -642,7 +642,7 @@ public:
             default: return "type(" + std::to_string(t) + ")";
         }
     }
-    
+
     static void print_shape(const std::vector<int64_t>& shape) {
         std::cout << "[";
         for (size_t i = 0; i < shape.size(); ++i) {
@@ -652,7 +652,7 @@ public:
         }
         std::cout << "]";
     }
-    
+
     const std::string& name() const { return name_; }
     const std::vector<std::string>& input_names() const { return in_names_; }
     const std::vector<std::string>& output_names() const { return out_names_; }
@@ -684,16 +684,16 @@ struct StateBufferIO {
     std::vector<std::string> names;
     std::vector<bool> is_dynamic;
     int current_buf = 0;
-    
+
     void init(OrtSession& s) {
         const auto& in_names = s.input_names();
         const auto& in_shapes = s.input_shapes();
         const auto& in_types = s.input_types();
-        
+
         for (size_t i = 0; i < in_names.size(); ++i) {
             if (in_names[i].find("state_") != 0) continue;
             names.push_back(in_names[i]);
-            
+
             std::vector<int64_t> sh;
             bool dynamic = false;
             for (auto d : in_shapes[i]) {
@@ -703,11 +703,11 @@ struct StateBufferIO {
             shapes.push_back(sh);
             types.push_back(in_types[i]);
             is_dynamic.push_back(dynamic);
-            
+
             size_t sz = 1;
             for (auto d : sh) sz *= (d > 0 ? d : 1);
             size_t alloc = dynamic ? 0 : sz;
-            
+
             for (int b = 0; b < 2; ++b) {
                 if (in_types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
                     i64[b].push_back(std::vector<int64_t>(alloc, 0));
@@ -726,14 +726,14 @@ struct StateBufferIO {
                 }
             }
         }
-        
+
         init_shapes = shapes;
     }
-    
+
     int in_buf() const { return current_buf; }
     int out_buf() const { return 1 - current_buf; }
     void swap() { current_buf = 1 - current_buf; }
-    
+
     // Reset all state buffers to zero without freeing/reallocating.
     // Ideal for fixed-size state models (e.g. Mimi decoder) where the
     // buffer sizes never change between runs.
@@ -754,7 +754,7 @@ struct StateBufferIO {
             }
         }
     }
-    
+
     Ort::Value create_input_value(size_t state_idx, Ort::MemoryInfo& mem) {
         auto t = types[state_idx];
         // FP16 KV caches use single-buffered mode (always buffer 0) to enable
@@ -762,10 +762,10 @@ struct StateBufferIO {
         int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : in_buf();
         auto& sh = shapes[state_idx];
         if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
-            return Ort::Value::CreateTensor<int64_t>(mem, i64[b][state_idx].data(), i64[b][state_idx].size(), 
+            return Ort::Value::CreateTensor<int64_t>(mem, i64[b][state_idx].data(), i64[b][state_idx].size(),
                                                       sh.data(), sh.size());
         } else if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL) {
-            return Ort::Value::CreateTensor<bool>(mem, reinterpret_cast<bool*>(b8[b][state_idx].data()), 
+            return Ort::Value::CreateTensor<bool>(mem, reinterpret_cast<bool*>(b8[b][state_idx].data()),
                                                    b8[b][state_idx].size(), sh.data(), sh.size());
         } else if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
             return Ort::Value::CreateTensor<Ort::Float16_t>(mem, reinterpret_cast<Ort::Float16_t*>(f16[0][state_idx].data()),
@@ -775,7 +775,7 @@ struct StateBufferIO {
                                                     sh.data(), sh.size());
         }
     }
-    
+
     Ort::Value create_output_value(size_t state_idx, Ort::MemoryInfo& mem) {
         auto t = types[state_idx];
         int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : out_buf();
@@ -794,14 +794,14 @@ struct StateBufferIO {
                                                     sh.data(), sh.size());
         }
     }
-    
+
     void copy_from_output(size_t state_idx, Ort::Value& val) {
         auto t = types[state_idx];
         int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : out_buf();
         auto info = val.GetTensorTypeAndShapeInfo();
         shapes[state_idx] = info.GetShape();
         size_t out_size = info.GetElementCount();
-        
+
         if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
             auto* src = val.GetTensorData<int64_t>();
             i64[b][state_idx].assign(src, src + out_size);
@@ -816,16 +816,16 @@ struct StateBufferIO {
             f32[b][state_idx].assign(src, src + out_size);
         }
     }
-    
+
     // ── DiskSnapshot ────────────────────────────────────────────────────────
     // Serialized blob for persisting KV state to disk (.kv files).
     // Format: [4B current_buf] [4B num_states] then per-state:
     //         [4B ndims] [ndims*8B shape] [4B type] [8B data_bytes] [data]
-    
+
     struct DiskSnapshot {
         std::vector<uint8_t> blob;
         static constexpr uint32_t MAGIC = 0x3143564B;  // "KVC1" little-endian
-        
+
         bool save_to_disk(const std::string& path) const {
             size_t slash = path.find_last_of('/');
             if (slash != std::string::npos) cache::mkdir_p(path.substr(0, slash));
@@ -838,7 +838,7 @@ struct StateBufferIO {
             f.write(reinterpret_cast<const char*>(blob.data()), blob.size());
             return f.good();
         }
-        
+
         bool load_from_disk(const std::string& path) {
             std::ifstream f(path, std::ios::binary);
             if (!f) return false;
@@ -853,11 +853,11 @@ struct StateBufferIO {
             return f.good();
         }
     };
-    
+
     // ── Snapshot ─────────────────────────────────────────────────────────────
     // Fast in-memory snapshot: all state data packed into contiguous buffers.
     // Restoring is a bulk memcpy into pre-sized buffers (~1ms for 60 states).
-    
+
     struct Snapshot {
         std::vector<float> f32_data;
         std::vector<int64_t> i64_data;
@@ -870,30 +870,30 @@ struct StateBufferIO {
         std::vector<std::vector<int64_t>> shapes;
         int current_buf;
     };
-    
+
     Snapshot take_snapshot() const {
         Snapshot snap;
         int b = in_buf();
         size_t n = names.size();
         snap.shapes.resize(n);
         snap.current_buf = current_buf;
-        
+
         // Detect sliceable KV cache states: large float32 or float16 buffers
         // paired with an int64 position counter at i+1 or i+2.
         struct SliceInfo { int seq_dim; int64_t used; };
         std::vector<SliceInfo> slices(n, {-1, -1});
-        
+
         for (size_t i = 0; i < n; ++i) {
             bool is_f32 = types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT && f32[b][i].size() >= 10000;
             bool is_f16 = types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 && f16[0][i].size() >= 10000;
             if (!is_f32 && !is_f16) continue;
-            
+
             int seq_dim = -1;
             for (size_t d = 0; d < shapes[i].size(); ++d) {
                 if (shapes[i][d] == 1000) { seq_dim = (int)d; break; }
             }
             if (seq_dim < 0) continue;
-            
+
             for (size_t j = 1; j <= 2 && i + j < n; ++j) {
                 if (types[i + j] == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 &&
                     i64[b][i + j].size() == 1 && i64[b][i + j][0] > 0 && i64[b][i + j][0] <= 1000) {
@@ -902,7 +902,7 @@ struct StateBufferIO {
                 }
             }
         }
-        
+
         // Compute total sizes with slicing
         size_t total_f32 = 0, total_i64 = 0, total_b8 = 0, total_f16 = 0;
         for (size_t i = 0; i < n; ++i) {
@@ -922,7 +922,7 @@ struct StateBufferIO {
             total_i64 += i64[b][i].size();
             total_b8 += b8[b][i].size();
         }
-        
+
         snap.f32_data.resize(total_f32);
         snap.i64_data.resize(total_i64);
         snap.b8_data.resize(total_b8);
@@ -931,14 +931,14 @@ struct StateBufferIO {
         snap.i64_offsets.resize(n + 1);
         snap.b8_offsets.resize(n + 1);
         snap.f16_offsets.resize(n + 1);
-        
+
         size_t fo = 0, io = 0, bo = 0, ho = 0;
         for (size_t i = 0; i < n; ++i) {
             snap.f32_offsets[i] = fo;
             snap.i64_offsets[i] = io;
             snap.b8_offsets[i] = bo;
             snap.f16_offsets[i] = ho;
-            
+
             if (slices[i].seq_dim >= 0) {
                 int sd = slices[i].seq_dim;
                 int64_t N = slices[i].used;
@@ -948,7 +948,7 @@ struct StateBufferIO {
                 for (size_t d = sd + 1; d < shapes[i].size(); ++d) inner *= shapes[i][d];
                 int64_t old_stride = shapes[i][sd] * inner;
                 int64_t new_stride = N * inner;
-                
+
                 if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
                     const uint16_t* src = f16[0][i].data();
                     uint16_t* dst = snap.f16_data.data() + ho;
@@ -966,7 +966,7 @@ struct StateBufferIO {
                 if (!f32[b][i].empty()) { memcpy(snap.f32_data.data() + fo, f32[b][i].data(), f32[b][i].size() * sizeof(float)); fo += f32[b][i].size(); }
                 if (!f16[0][i].empty()) { memcpy(snap.f16_data.data() + ho, f16[0][i].data(), f16[0][i].size() * sizeof(uint16_t)); ho += f16[0][i].size(); }
             }
-            
+
             if (!i64[b][i].empty()) { memcpy(snap.i64_data.data() + io, i64[b][i].data(), i64[b][i].size() * sizeof(int64_t)); io += i64[b][i].size(); }
             if (!b8[b][i].empty()) { memcpy(snap.b8_data.data() + bo, b8[b][i].data(), b8[b][i].size()); bo += b8[b][i].size(); }
         }
@@ -974,34 +974,34 @@ struct StateBufferIO {
         snap.i64_offsets[n] = io;
         snap.b8_offsets[n] = bo;
         snap.f16_offsets[n] = ho;
-        
+
         return snap;
     }
-    
+
     void restore_snapshot(const Snapshot& snap) {
         current_buf = snap.current_buf;
         int b = in_buf();
         size_t n = names.size();
-        
+
         for (size_t i = 0; i < n; ++i) {
             size_t f32_off = snap.f32_offsets[i], f32_end = snap.f32_offsets[i + 1];
             size_t f16_off = snap.f16_offsets[i], f16_end = snap.f16_offsets[i + 1];
             size_t i64_off = snap.i64_offsets[i], i64_end = snap.i64_offsets[i + 1];
             size_t b8_off  = snap.b8_offsets[i],  b8_end  = snap.b8_offsets[i + 1];
-            
+
             bool has_f32 = f32_end > f32_off;
             bool has_f16 = f16_end > f16_off;
             bool sliced = (snap.shapes[i] != init_shapes[i]) && (has_f32 || has_f16);
-            
+
             if (sliced) {
                 size_t full_size = 1;
                 for (auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
-                
+
                 int sd = -1;
                 for (size_t d = 0; d < init_shapes[i].size(); ++d) {
                     if (snap.shapes[i][d] != init_shapes[i][d]) { sd = (int)d; break; }
                 }
-                
+
                 if (has_f16) {
                     f16[0][i].resize(full_size);
                     if (sd >= 0) {
@@ -1037,18 +1037,18 @@ struct StateBufferIO {
                 f32[b][i].assign(snap.f32_data.begin() + f32_off, snap.f32_data.begin() + f32_end);
                 f16[0][i].assign(snap.f16_data.begin() + f16_off, snap.f16_data.begin() + f16_end);
             }
-            
+
             i64[b][i].assign(snap.i64_data.begin() + i64_off, snap.i64_data.begin() + i64_end);
             b8[b][i].assign(snap.b8_data.begin() + b8_off, snap.b8_data.begin() + b8_end);
         }
-        
+
         shapes = init_shapes;
     }
-    
+
     DiskSnapshot snapshot_to_disk(const Snapshot& snap) const {
         DiskSnapshot ds;
         size_t n = names.size();
-        
+
         size_t total = 8;
         for (size_t i = 0; i < n; ++i) {
             size_t f32_count = snap.f32_offsets[i + 1] - snap.f32_offsets[i];
@@ -1061,26 +1061,26 @@ struct StateBufferIO {
             else if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) total += f16_count * 2;
             else total += f32_count * 4;
         }
-        
+
         ds.blob.resize(total);
         uint8_t* p = ds.blob.data();
         auto write = [&](const void* src, size_t bytes) { memcpy(p, src, bytes); p += bytes; };
-        
+
         int32_t cb = snap.current_buf, ns = int32_t(n);
         write(&cb, 4); write(&ns, 4);
-        
+
         for (size_t i = 0; i < n; ++i) {
             int32_t ndims = int32_t(snap.shapes[i].size());
             int32_t type = int32_t(types[i]);
             write(&ndims, 4);
             write(snap.shapes[i].data(), ndims * 8);
             write(&type, 4);
-            
+
             size_t f32_count = snap.f32_offsets[i + 1] - snap.f32_offsets[i];
             size_t f16_count = snap.f16_offsets[i + 1] - snap.f16_offsets[i];
             size_t i64_count = snap.i64_offsets[i + 1] - snap.i64_offsets[i];
             size_t b8_count = snap.b8_offsets[i + 1] - snap.b8_offsets[i];
-            
+
             int64_t data_bytes;
             if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
                 data_bytes = i64_count * 8; write(&data_bytes, 8);
@@ -1098,16 +1098,16 @@ struct StateBufferIO {
         }
         return ds;
     }
-    
+
     void restore_from_disk(const DiskSnapshot& ds) {
         const uint8_t* p = ds.blob.data();
         auto read = [&](void* dst, size_t bytes) { memcpy(dst, p, bytes); p += bytes; };
-        
+
         int32_t cb, ns;
         read(&cb, 4); read(&ns, 4);
         current_buf = cb;
         int b = in_buf();
-        
+
         for (int32_t i = 0; i < ns; ++i) {
             int32_t ndims, type;
             int64_t data_bytes;
@@ -1116,7 +1116,7 @@ struct StateBufferIO {
             read(loaded_shape.data(), ndims * 8);
             read(&type, 4);
             read(&data_bytes, 8);
-            
+
             if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
                 size_t count = data_bytes / 8;
                 auto* src = reinterpret_cast<const int64_t*>(p);
@@ -1187,7 +1187,7 @@ struct StateBufferIO {
                 }
             }
         }
-        
+
         shapes = init_shapes;
     }
 };
@@ -1208,7 +1208,7 @@ class StatefulRunner {
     Ort::MemoryInfo mem_;
     StateBufferIO state_;
     std::unique_ptr<Ort::IoBinding> binding_;
-    
+
     // FP16 writeback fixup: detects when ORT ignores pre-bound output buffer
     // and copies just the modified cache positions from ORT's temp to ours.
     struct FP16Fixup {
@@ -1219,13 +1219,13 @@ class StatefulRunner {
         int64_t capacity;      // cache seq dim
     };
     std::vector<FP16Fixup> fp16_fixups_;
-    
+
 public:
-    StatefulRunner(OrtSession& sess) 
+    StatefulRunner(OrtSession& sess)
         : sess_(sess), mem_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
         state_.init(sess);
         binding_ = std::make_unique<Ort::IoBinding>(sess_.session());
-        
+
         // Discover fp16 cache → step counter associations.
         // FP16 states come in K/V pairs, each followed by an int64 step/offset.
         struct AttnLayer { size_t k, v, step; };
@@ -1241,14 +1241,14 @@ public:
             layers.push_back(l);
             i = l.v; // skip V, already paired
         }
-        
+
         // Map state indices to output indices
         std::unordered_map<size_t, size_t> state_to_output;
         const auto& out_names = sess_.output_names();
         size_t si = 0;
         for (size_t i = 0; i < out_names.size(); ++i)
             if (out_names[i].find("out_state_") == 0) state_to_output[si++] = i;
-        
+
         // Build fixup entries for each fp16 cache
         for (auto& l : layers) {
             for (size_t idx : {l.k, l.v}) {
@@ -1264,16 +1264,16 @@ public:
             }
         }
     }
-    
+
     StateBufferIO& state() { return state_; }
-    
+
     using Snapshot = StateBufferIO::Snapshot;
     using DiskSnapshot = StateBufferIO::DiskSnapshot;
     Snapshot take_snapshot() const { return state_.take_snapshot(); }
     void restore_snapshot(const Snapshot& snap) { state_.restore_snapshot(snap); }
     void restore_from_disk(const DiskSnapshot& ds) { state_.restore_from_disk(ds); }
     DiskSnapshot snapshot_to_disk(const Snapshot& snap) const { return state_.snapshot_to_disk(snap); }
-    
+
     // Full re-initialization — creates fresh StateBufferIO from session metadata.
     // Required for models with dynamic states (e.g. main transformer KV cache)
     // where shapes change between runs.
@@ -1281,20 +1281,20 @@ public:
         state_ = StateBufferIO();
         state_.init(sess_);
     }
-    
+
     // Lightweight reset — zeroes existing buffers without reallocation.
     // Only safe for models with fixed-size states (e.g. Mimi decoder).
     void reset_state() {
         state_.reset();
     }
-    
+
     std::vector<Ort::Value> run(const std::vector<Ort::Value>& non_state_inputs) {
         binding_->ClearBoundInputs();
         binding_->ClearBoundOutputs();
-        
+
         const auto& in_names = sess_.input_names();
         const auto& out_names = sess_.output_names();
-        
+
         size_t non_state_idx = 0;
         size_t state_idx = 0;
         for (size_t i = 0; i < in_names.size(); ++i) {
@@ -1304,7 +1304,7 @@ public:
                 binding_->BindInput(in_names[i].c_str(), non_state_inputs[non_state_idx++]);
             }
         }
-        
+
         std::vector<std::pair<size_t, size_t>> dynamic_out_states;
         state_idx = 0;
         for (size_t i = 0; i < out_names.size(); ++i) {
@@ -1320,13 +1320,13 @@ public:
                 binding_->BindOutput(out_names[i].c_str(), mem_);
             }
         }
-        
+
         sess_.run_with_binding(*binding_);
         auto outputs = binding_->GetOutputValues();
         for (auto& [out_idx, st_idx] : dynamic_out_states) {
             state_.copy_from_output(st_idx, outputs[out_idx]);
         }
-        
+
         // FP16 fixup: if ORT ignored our pre-bound buffer for ScatterElements,
         // copy just the newly written positions from ORT's output to our buffer.
         // When ORT honored our buffer (src == dst), this loop is a no-op.
@@ -1354,9 +1354,9 @@ public:
                 }
             }
         }
-        
+
         state_.swap();
-        
+
         std::vector<Ort::Value> result;
         for (size_t i = 0; i < out_names.size(); ++i) {
             if (out_names[i].find("out_state_") != 0) {
@@ -1365,7 +1365,7 @@ public:
         }
         return result;
     }
-    
+
     Ort::MemoryInfo& mem() { return mem_; }
 };
 
@@ -1394,11 +1394,11 @@ public:
 class PocketTTS {
 public:
     static constexpr int SR = 24000;
-    
+
     explicit PocketTTS(const Config& cfg = {}) : cfg_(cfg) {
         rng::seed(uint64_t(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
         tok_ = std::make_unique<Tokenizer>(cfg_.tokenizer_path);
-        
+
         // Thread budget: --threads sets the total. During pipelined streaming,
         // the AR generator and Mimi decoder run simultaneously, so we split the
         // budget between them. Non-pipelined models (encoder, text conditioner)
@@ -1410,7 +1410,7 @@ public:
         int threads_dec = std::max(1, total / 2);
         int threads_ar = std::max(1, total - threads_dec);
         int threads_full = total;
-        
+
         auto make_opts = [](int threads) {
             Ort::SessionOptions opts;
             opts.SetIntraOpNumThreads(threads);
@@ -1418,7 +1418,7 @@ public:
             opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
             return opts;
         };
-        
+
         // Arena disabled for sessions with large or variable-size inputs that
         // run infrequently — ORT's arena never releases memory back to the OS,
         // so a single large allocation permanently inflates RSS.
@@ -1433,16 +1433,16 @@ public:
             opts.DisableCpuMemArena();
             return opts;
         };
-        
+
         auto opts_full = make_opts(threads_full);
         auto opts_ar = make_opts(threads_ar);
         auto opts_enc = make_opts_no_arena(threads_full);
         auto opts_dec = make_opts_no_arena(threads_dec);
-        
+
         if (cfg_.verbose) {
             std::cout << "\n========== ONNX RUNTIME INFO ==========\n";
             std::cout << "  ORT Version: " << OrtGetApiBase()->GetVersionString() << "\n";
-            std::cout << "  Thread budget: " << total << " (AR: " << threads_ar 
+            std::cout << "  Thread budget: " << total << " (AR: " << threads_ar
                       << ", decoder: " << threads_dec << ", full: " << threads_full << ")\n";
             auto providers = Ort::GetAvailableProviders();
             std::cout << "  Execution Providers: ";
@@ -1452,26 +1452,26 @@ public:
             }
             std::cout << "\n================================\n";
         }
-        
+
         auto& env = get_ort_env();
         std::string sfx = cfg_.precision == "int8" ? "_int8" : "";
-        
+
         enc_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/mimi_encoder.onnx", opts_enc, "mimi_encoder");
         txt_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/text_conditioner.onnx", opts_full, "text_conditioner");
         main_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/flow_lm_main" + sfx + ".onnx", opts_ar, "flow_lm_main" + sfx);
         flow_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/flow_lm_flow" + sfx + ".onnx", opts_ar, "flow_lm_flow" + sfx);
         dec_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/mimi_decoder" + sfx + ".onnx", opts_dec, "mimi_decoder" + sfx);
-        
+
         main_runner_ = std::make_unique<StatefulRunner>(*main_);
         dec_runner_ = std::make_unique<StatefulRunner>(*dec_);
-        
+
         dt_ = 1.0f / cfg_.lsd_steps;
         st_values_.reserve(cfg_.lsd_steps);
         for (int j = 0; j < cfg_.lsd_steps; ++j) {
             float s = float(j) / cfg_.lsd_steps;
             st_values_.emplace_back(s, s + dt_);
         }
-        
+
         if (cfg_.verbose) {
             std::cerr << "\n========== MODEL INFO ==========\n";
             main_->print_info();
@@ -1479,12 +1479,12 @@ public:
             std::cerr << "================================\n";
         }
     }
-    
+
     // ── Audio I/O ───────────────────────────────────────────────────────────
-    
+
     static AudioData load_audio(const std::string& path) {
         auto _ = g_prof.time("load_audio");
-        
+
         // Detect format from extension
         std::string ext;
         size_t dot = path.rfind('.');
@@ -1492,11 +1492,11 @@ public:
             ext = path.substr(dot);
             for (auto& c : ext) c = std::tolower((unsigned char)c);
         }
-        
+
         float* raw = nullptr;
         unsigned ch = 0, sr = 0;
         drwav_uint64 n = 0;
-        
+
         if (ext == ".mp3") {
             drmp3_config mp3_cfg{};
             drmp3_uint64 mp3_n = 0;
@@ -1512,31 +1512,31 @@ public:
             // Default to WAV (handles .wav and any unknown extension)
             raw = drwav_open_file_and_read_pcm_frames_f32(path.c_str(), &ch, &sr, &n, nullptr);
         }
-        
+
         if (!raw) throw std::runtime_error("Failed to load audio: " + path);
-        
+
         std::vector<float> mono(n);
         for (size_t i = 0; i < n; ++i) {
             float sum = 0;
             for (unsigned c = 0; c < ch; ++c) sum += raw[i * ch + c];
             mono[i] = sum / ch;
         }
-        
+
         if (ext == ".mp3") drmp3_free(raw, nullptr);
         else if (ext == ".flac" || ext == ".ogg") drflac_free(raw, nullptr);
         else drwav_free(raw, nullptr);
-        
+
         if (sr != SR) {
             auto _ = g_prof.time("resample");
             mono = resample(mono, sr, SR);
         }
-        
+
         float mx = *std::max_element(mono.begin(), mono.end(), [](float a, float b) { return std::abs(a) < std::abs(b); });
         if (std::abs(mx) > 1) for (auto& s : mono) s /= std::abs(mx);
-        
+
         return {std::move(mono), SR};
     }
-    
+
     static void save_audio(const AudioData& a, const std::string& path) {
         auto _ = g_prof.time("save_audio");
         drwav w;
@@ -1546,15 +1546,15 @@ public:
         drwav_write_pcm_frames(&w, a.samples.size(), a.samples.data());
         drwav_uninit(&w);
     }
-    
+
     // ── Voice Encoding ──────────────────────────────────────────────────────
-    
+
     Tensor encode_voice(const std::string& path) {
         auto timer = g_prof.time("encode_voice");
-        
+
         if (cfg_.voice_cache) {
             std::string cache_path = cache::get_cache_path(cfg_.voices_dir, path);
-            
+
             if (cache::is_cache_valid(path, cache_path)) {
                 auto cache_timer = g_prof.time("encode_voice.cache_load");
                 std::vector<int64_t> shape;
@@ -1567,34 +1567,34 @@ public:
                 }
             }
         }
-        
+
         auto a = load_audio(path);
-        
+
         // Truncate to 30 seconds max — matches Python, prevents OOM on long samples
         static constexpr size_t MAX_VOICE_SAMPLES = 30 * SR;  // 720000 at 24kHz
         if (a.samples.size() > MAX_VOICE_SAMPLES) {
             a.samples.resize(MAX_VOICE_SAMPLES);
             if (cfg_.verbose) std::cerr << "  Voice truncated to 30s\n";
         }
-        
+
         Tensor t({1, 1, int64_t(a.samples.size())});
         std::copy(a.samples.begin(), a.samples.end(), t.data.begin());
-        
+
         Ort::MemoryInfo m = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         std::vector<Ort::Value> in;
         in.push_back(Ort::Value::CreateTensor<float>(m, t.ptr(), t.numel(), t.shape.data(), t.shape.size()));
-        
+
         auto out = enc_->run(in);
         auto sh = out[0].GetTensorTypeAndShapeInfo().GetShape();
         size_t n = 1;
         for (auto d : sh) n *= d;
-        
+
         Tensor r(std::vector<float>(out[0].GetTensorData<float>(), out[0].GetTensorData<float>() + n),
                  std::vector<int64_t>(sh.begin(), sh.end()));
-        
+
         while (r.shape.size() > 3) r = r.squeeze(0);
         if (r.shape.size() < 3) r.reshape({1, r.shape[0], r.shape[1]});
-        
+
         if (cfg_.voice_cache) {
             std::string cache_path = cache::get_cache_path(cfg_.voices_dir, path);
             if (cache::save_embedding(cache_path, r.shape, r.data)) {
@@ -1603,21 +1603,21 @@ public:
                 }
             }
         }
-        
+
         return r;
     }
-    
+
     // ── Public API ──────────────────────────────────────────────────────────
-    
+
     AudioData generate(const std::string& text, const std::string& voice, int max_frames = 500) {
         return generate(text, get_voice(voice), max_frames);
     }
-    
+
     AudioData generate(const std::string& text, const Tensor& voice, int max_frames = 500);
     void stream(const std::string& text, const std::string& voice, StreamCallback cb, int max_frames = 500);
     void stream(const std::string& text, const Tensor& voice, StreamCallback cb, int max_frames = 500);
     const Config& config() const { return cfg_; }
-    
+
     double warmup() {
         auto start = std::chrono::high_resolution_clock::now();
         Tensor dummy_voice({1, 8, 1024});
@@ -1626,7 +1626,7 @@ public:
         auto end = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(end - start).count();
     }
-    
+
     void print_profiling_report() const { g_prof.report(); }
     void reset_profiling() { g_prof.reset(); }
 
@@ -1639,25 +1639,25 @@ private:
     std::vector<std::pair<float, float>> st_values_;
     float dt_;
     std::unordered_map<std::string, Tensor> vcache_;
-    
+
     // ── Voice Resolution ────────────────────────────────────────────────────
-    
+
     std::string resolve_voice_path(const std::string& p) const {
         if (!p.empty() && p[0] == '/') return p;
         return cfg_.voices_dir + "/" + p;
     }
-    
+
     const Tensor& get_voice(const std::string& p) {
         voice_kv_path_ = p;
         auto it = vcache_.find(p);
         if (it != vcache_.end()) return it->second;
-        
+
         std::string resolved = resolve_voice_path(p);
         return vcache_[p] = encode_voice(resolved);
     }
-    
+
     // ── Tokenization ────────────────────────────────────────────────────────
-    
+
     TensorI64 tokenize(const std::string& text) {
         auto _ = g_prof.time("tokenize");
         std::string t = text;
@@ -1667,14 +1667,14 @@ private:
         t = t.substr(s, e - s + 1);
         if (std::isalnum((unsigned char)t.back())) t += ".";
         if (!t.empty() && std::islower((unsigned char)t[0])) t[0] = std::toupper((unsigned char)t[0]);
-        
+
         auto ids = tok_->encode(t);
         if (cfg_.verbose) std::cerr << "  Tokens: " << ids.size() << " from " << t.size() << " chars\n";
         TensorI64 r({1, int64_t(ids.size())});
         for (size_t i = 0; i < ids.size(); ++i) r.data[i] = ids[i];
         return r;
     }
-    
+
     // ── LatentGen ───────────────────────────────────────────────────────────
     // Autoregressive latent generator. Each call to next() runs the main
     // transformer for one frame, then solves the flow matching ODE to produce
@@ -1683,7 +1683,7 @@ private:
     // Construction has two paths:
     //   - Full: runs voice conditioning + text conditioning from scratch
     //   - Cached: restores a KV snapshot then runs text conditioning only
-    
+
     class LatentGen {
         PocketTTS& tts;
         int max_, idx_ = 0, extra_ = 0;
@@ -1692,31 +1692,31 @@ private:
         bool done_ = false, eos_ = false;
         float temp_;
         Ort::MemoryInfo m_;
-        
+
         StatefulRunner& main_runner_;
-        
+
         std::vector<float> fx_, cl_, cond_, temb_;
         std::vector<int64_t> csh_, tsh_;
         std::vector<Ort::Value> flow_inputs_;
-        
+
         static constexpr int64_t curr_shape_[3] = {1, 1, 32};
         static constexpr int64_t empty_text_shape_[3] = {1, 0, 1024};
         static constexpr int64_t empty_seq_shape_[3] = {1, 0, 32};
         static constexpr int64_t s_shape_[2] = {1, 1};
         static constexpr int64_t x_shape_[2] = {1, 32};
-        
+
         std::vector<float> s_buf_{1}, t_buf_{1};
-        
+
         void cond_pass(const float* d, size_t sz, const std::vector<int64_t>& sh) {
             std::vector<Ort::Value> inputs;
             inputs.push_back(Ort::Value::CreateTensor<float>(m_, nullptr, 0, empty_seq_shape_, 3));
             inputs.push_back(Ort::Value::CreateTensor<float>(m_, const_cast<float*>(d), sz, sh.data(), sh.size()));
             main_runner_.run(inputs);
         }
-        
+
     public:
         using Snapshot = StatefulRunner::Snapshot;
-        
+
         // Full path: voice conditioning → (optional snapshot) → text conditioning
         LatentGen(PocketTTS& t, const Tensor& v, const TensorI64& tid, int max, int eos_extra, Snapshot* out_voice_snap = nullptr)
             : tts(t), max_(max), eos_extra_(eos_extra), m_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
@@ -1724,15 +1724,15 @@ private:
               main_runner_(*tts.main_runner_) {
             temp_ = std::sqrt(tts.cfg_.temperature);
             flow_inputs_.reserve(4);
-            
+
             main_runner_.reinit();
-            
+
             {
                 auto _ = g_prof.time("text_conditioning");
                 std::vector<Ort::Value> in;
                 in.push_back(Ort::Value::CreateTensor<int64_t>(m_, const_cast<int64_t*>(tid.ptr()), tid.numel(), tid.shape.data(), tid.shape.size()));
                 auto out = tts.txt_->run(in);
-                
+
                 auto sh = out[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t n = 1;
                 for (auto d : sh) n *= d;
@@ -1740,20 +1740,20 @@ private:
                 tsh_.assign(sh.begin(), sh.end());
                 if (tsh_.size() == 2) tsh_.insert(tsh_.begin(), 1);
             }
-            
+
             {
                 auto _ = g_prof.time("voice_conditioning_pass");
                 cond_pass(v.ptr(), v.numel(), v.shape);
             }
-            
+
             if (out_voice_snap) *out_voice_snap = main_runner_.take_snapshot();
-            
+
             {
                 auto _ = g_prof.time("text_conditioning_pass");
                 cond_pass(temb_.data(), temb_.size(), tsh_);
             }
         }
-        
+
         // Cached path: restore KV snapshot → text conditioning only
         LatentGen(PocketTTS& t, const Snapshot& voice_snap, const TensorI64& tid, int max, int eos_extra)
             : tts(t), max_(max), eos_extra_(eos_extra), m_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
@@ -1761,13 +1761,13 @@ private:
               main_runner_(*tts.main_runner_) {
             temp_ = std::sqrt(tts.cfg_.temperature);
             flow_inputs_.reserve(4);
-            
+
             {
                 auto _ = g_prof.time("text_conditioning");
                 std::vector<Ort::Value> in;
                 in.push_back(Ort::Value::CreateTensor<int64_t>(m_, const_cast<int64_t*>(tid.ptr()), tid.numel(), tid.shape.data(), tid.shape.size()));
                 auto out = tts.txt_->run(in);
-                
+
                 auto sh = out[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t n = 1;
                 for (auto d : sh) n *= d;
@@ -1775,54 +1775,54 @@ private:
                 tsh_.assign(sh.begin(), sh.end());
                 if (tsh_.size() == 2) tsh_.insert(tsh_.begin(), 1);
             }
-            
+
             {
                 auto _ = g_prof.time("voice_kv_restore");
                 main_runner_.restore_snapshot(voice_snap);
             }
-            
+
             {
                 auto _ = g_prof.time("text_conditioning_pass");
                 cond_pass(temb_.data(), temb_.size(), tsh_);
             }
         }
-        
+
         bool has_next() const { return !done_ && idx_ < max_; }
-        
+
         Tensor next() {
             if (!has_next()) throw std::runtime_error("No more latents");
-            
+
             float eos_logit = 0;
-            
+
             {
                 auto _ = g_prof.time("frame:main_model");
                 std::vector<Ort::Value> inputs;
                 inputs.push_back(Ort::Value::CreateTensor<float>(m_, cl_.data(), cl_.size(), curr_shape_, 3));
                 inputs.push_back(Ort::Value::CreateTensor<float>(m_, nullptr, 0, empty_text_shape_, 3));
-                
+
                 auto outputs = main_runner_.run(inputs);
-                
+
                 auto csh = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t cn = 1;
                 for (auto d : csh) cn *= d;
                 cond_.assign(outputs[0].GetTensorData<float>(), outputs[0].GetTensorData<float>() + cn);
                 csh_.assign(csh.begin(), csh.end());
-                
+
                 eos_logit = outputs[1].GetTensorData<float>()[0];
             }
-            
+
             if (!eos_ && eos_logit > tts.cfg_.eos_threshold) {
                 eos_ = true;
                 eos_frame_ = idx_;
             }
-            
+
             if (eos_) {
-                if (++extra_ > eos_extra_) { 
-                    done_ = true; 
-                    return Tensor(); 
+                if (++extra_ > eos_extra_) {
+                    done_ = true;
+                    return Tensor();
                 }
             }
-            
+
             {
                 auto _ = g_prof.time("frame:rng");
                 if (temp_ > 0) {
@@ -1832,50 +1832,50 @@ private:
                 }
                 else std::fill(fx_.begin(), fx_.end(), 0.0f);
             }
-            
+
             {
                 auto _ = g_prof.time("frame:flow_steps");
                 for (const auto& [s, t] : tts.st_values_) {
                     s_buf_[0] = s;
                     t_buf_[0] = t;
-                    
+
                     flow_inputs_.clear();
                     flow_inputs_.push_back(Ort::Value::CreateTensor<float>(m_, cond_.data(), cond_.size(), csh_.data(), csh_.size()));
                     flow_inputs_.push_back(Ort::Value::CreateTensor<float>(m_, s_buf_.data(), 1, s_shape_, 2));
                     flow_inputs_.push_back(Ort::Value::CreateTensor<float>(m_, t_buf_.data(), 1, s_shape_, 2));
                     flow_inputs_.push_back(Ort::Value::CreateTensor<float>(m_, fx_.data(), 32, x_shape_, 2));
-                    
+
                     auto fo = tts.flow_->run(flow_inputs_);
                     const float* out_data = fo[0].GetTensorData<float>();
-                    
+
                     for (int i = 0; i < 32; ++i)
                         fx_[i] += out_data[i] * tts.dt_;
                 }
             }
-            
+
             std::copy(fx_.begin(), fx_.end(), cl_.begin());
             idx_++;
             return Tensor({fx_.begin(), fx_.end()}, {1, 1, 32});
         }
-        
+
         int frame_idx() const { return idx_; }
         int eos_frame() const { return eos_frame_; }
     };
-    
+
     friend class LatentGen;
-    
+
     // ── Voice KV Cache ──────────────────────────────────────────────────────
     // Three-tier cache for voice-conditioned KV state:
     //   1. In-memory snapshot (fastest, ~1ms restore)
     //   2. On-disk .kv file (fast, ~4ms restore)
     //   3. Full recomputation (slow, hundreds of ms)
-    
+
     using VoiceKVSnapshot = LatentGen::Snapshot;
-    
+
     std::unique_ptr<VoiceKVSnapshot> voice_kv_snap_;
     uint64_t voice_kv_hash_ = 0;
     std::string voice_kv_path_;
-    
+
     static uint64_t voice_hash(const Tensor& v) {
         uint64_t h = 14695981039346656037ull;
         int n = std::min(16, int(v.data.size()));
@@ -1887,15 +1887,15 @@ private:
         }
         return h;
     }
-    
+
     LatentGen make_gen(const Tensor& v, const TensorI64& t, int max, int eos_extra) {
         uint64_t vh = voice_hash(v);
-        
+
         // Tier 1: in-memory cache hit
         if (voice_kv_snap_ && voice_kv_hash_ == vh) {
             return LatentGen(*this, *voice_kv_snap_, t, max, eos_extra);
         }
-        
+
         // Tier 2: disk cache hit
         if (cfg_.voice_cache && !voice_kv_path_.empty()) {
             std::string kv_path = cache::get_cache_path(cfg_.voices_dir, voice_kv_path_, "kv");
@@ -1909,13 +1909,13 @@ private:
                 return LatentGen(*this, *voice_kv_snap_, t, max, eos_extra);
             }
         }
-        
+
         // Tier 3: full voice conditioning
         VoiceKVSnapshot snap;
         auto gen = LatentGen(*this, v, t, max, eos_extra, &snap);
         voice_kv_snap_ = std::make_unique<VoiceKVSnapshot>(std::move(snap));
         voice_kv_hash_ = vh;
-        
+
         if (cfg_.voice_cache && !voice_kv_path_.empty()) {
             std::string kv_path = cache::get_cache_path(cfg_.voices_dir, voice_kv_path_, "kv");
             auto ds = main_runner_->snapshot_to_disk(*voice_kv_snap_);
@@ -1923,7 +1923,7 @@ private:
                 if (cfg_.verbose) std::cerr << "  Saved KV cache: " << kv_path << "\n";
             }
         }
-        
+
         return gen;
     }
 };
@@ -1939,10 +1939,10 @@ constexpr int64_t PocketTTS::LatentGen::x_shape_[2];
 
 AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int max_frames) {
     auto _ = g_prof.time("generate_total");
-    
+
     auto sentences = split_sentences(text);
     if (sentences.empty()) sentences.push_back(text);
-    
+
     if (sentences.size() == 1) {
         std::vector<float> samples;
         samples.reserve(max_frames * 2000);
@@ -1952,27 +1952,27 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
         }, max_frames);
         return {std::move(samples), SR};
     }
-    
+
     // Multi-sentence: generate each independently, crossfade at boundaries
     static constexpr int XFADE_SAMPLES = 240;  // 10ms at 24kHz
-    
+
     std::vector<float> all_samples;
-    
+
     for (size_t i = 0; i < sentences.size(); ++i) {
         if (cfg_.verbose) {
-            std::cerr << "  Sentence " << (i + 1) << "/" << sentences.size() 
-                      << ": \"" << sentences[i].substr(0, 60) 
+            std::cerr << "  Sentence " << (i + 1) << "/" << sentences.size()
+                      << ": \"" << sentences[i].substr(0, 60)
                       << (sentences[i].size() > 60 ? "..." : "") << "\"\n";
         }
-        
+
         std::vector<float> chunk_samples;
         stream(sentences[i], voice, [&](const float* s, size_t n) {
             chunk_samples.insert(chunk_samples.end(), s, s + n);
             return true;
         }, max_frames);
-        
+
         if (chunk_samples.empty()) continue;
-        
+
         if (i > 0 && !all_samples.empty()) {
             int xfade = std::min(XFADE_SAMPLES, std::min(int(all_samples.size()), int(chunk_samples.size())));
             size_t tail_start = all_samples.size() - xfade;
@@ -1985,7 +1985,7 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
             all_samples.insert(all_samples.end(), chunk_samples.begin(), chunk_samples.end());
         }
     }
-    
+
     return {std::move(all_samples), SR};
 }
 
@@ -1996,23 +1996,23 @@ void PocketTTS::stream(const std::string& text, const std::string& voice, Stream
 void PocketTTS::stream(const std::string& text, const Tensor& voice, StreamCallback cb, int max_frames) {
     auto sentences = split_sentences(text);
     if (sentences.empty()) sentences.push_back(text);
-    
+
     for (size_t si = 0; si < sentences.size(); ++si) {
         auto [prepared, eos_extra] = prepare_text(sentences[si], cfg_.eos_extra_frames);
         if (prepared.empty()) continue;
         auto gen = make_gen(voice, tokenize(prepared), max_frames, eos_extra);
         dec_runner_->reset_state();  // zero existing buffers, no reallocation
-        
+
         // Pipelined: generator thread produces latent frames into a queue,
         // decoder (main thread) consumes them in chunks. The two ONNX sessions
         // (flow_lm_main and mimi_decoder) run on separate threads simultaneously.
-        
+
         std::mutex mtx;
         std::condition_variable cv;
         std::deque<Tensor> queue;
         bool gen_done = false;
         bool aborted = false;
-        
+
         std::thread gen_thread([&]() {
             while (gen.has_next()) {
                 {
@@ -2034,38 +2034,38 @@ void PocketTTS::stream(const std::string& text, const Tensor& voice, StreamCallb
             }
             cv.notify_one();
         });
-        
+
         bool first = true;
-        
+
         while (true) {
             int want = first ? cfg_.first_chunk_frames : cfg_.max_chunk_frames;
-            
+
             std::vector<Tensor> batch;
             {
                 std::unique_lock<std::mutex> lock(mtx);
                 cv.wait(lock, [&]{ return (int)queue.size() >= want || gen_done || aborted; });
                 if (aborted) break;
-                
+
                 int take = gen_done ? (int)queue.size() : std::min((int)queue.size(), want);
                 for (int i = 0; i < take; ++i) {
                     batch.push_back(std::move(queue.front()));
                     queue.pop_front();
                 }
             }
-            
+
             if (batch.empty() && gen_done) break;
-            
+
             if (!batch.empty()) {
                 auto lat = Tensor::concat(batch, 1);
                 std::vector<Ort::Value> inputs;
                 inputs.push_back(Ort::Value::CreateTensor<float>(dec_runner_->mem(), lat.ptr(), lat.numel(),
                                                                   lat.shape.data(), lat.shape.size()));
-                
+
                 auto outputs = dec_runner_->run(inputs);
                 auto shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t n = 1;
                 for (auto d : shape) n *= d;
-                
+
                 if (!cb(outputs[0].GetTensorData<float>(), n)) {
                     std::lock_guard<std::mutex> lock(mtx);
                     aborted = true;
@@ -2074,7 +2074,7 @@ void PocketTTS::stream(const std::string& text, const Tensor& voice, StreamCallb
                 first = false;
             }
         }
-        
+
         if (gen_thread.joinable()) {
             gen_thread.join();
         }
@@ -2093,29 +2093,29 @@ struct HttpRequest {
     std::string method;
     std::string path;
     std::string body;
-    
+
     static HttpRequest parse(ptt_socket_t client_fd) {
         HttpRequest req;
         std::string data;
         char buf[4096];
-        
+
         while (true) {
             ssize_t n = recv(client_fd, buf, (int)sizeof(buf), 0);
             if (n <= 0) break;
             data.append(buf, n);
-            
+
             size_t header_end = data.find("\r\n\r\n");
             if (header_end != std::string::npos) {
                 // Case-insensitive search for Content-Length header
                 std::string lower_data = data.substr(0, header_end);
                 for (auto& c : lower_data) c = std::tolower((unsigned char)c);
                 size_t cl_pos = lower_data.find("content-length:");
-                
+
                 if (cl_pos != std::string::npos) {
                     size_t cl_end = data.find("\r\n", cl_pos);
                     int content_length = std::stoi(data.substr(cl_pos + 15, cl_end - cl_pos - 15));
                     size_t body_start = header_end + 4;
-                    
+
                     while (data.size() < body_start + content_length) {
                         n = recv(client_fd, buf, (int)sizeof(buf), 0);
                         if (n <= 0) break;
@@ -2125,7 +2125,7 @@ struct HttpRequest {
                 break;
             }
         }
-        
+
         size_t line_end = data.find("\r\n");
         if (line_end != std::string::npos) {
             std::string line = data.substr(0, line_end);
@@ -2136,12 +2136,12 @@ struct HttpRequest {
                 req.path = line.substr(sp1 + 1, sp2 - sp1 - 1);
             }
         }
-        
+
         size_t body_start = data.find("\r\n\r\n");
         if (body_start != std::string::npos) {
             req.body = data.substr(body_start + 4);
         }
-        
+
         return req;
     }
 };
@@ -2150,13 +2150,13 @@ static std::string json_get_string(const std::string& json, const std::string& k
     std::string search = "\"" + key + "\"";
     size_t pos = json.find(search);
     if (pos == std::string::npos) return "";
-    
+
     pos = json.find(':', pos);
     if (pos == std::string::npos) return "";
-    
+
     pos = json.find('"', pos);
     if (pos == std::string::npos) return "";
-    
+
     // Walk forward, unescaping JSON escape sequences and stopping at the
     // closing (unescaped) double-quote.
     std::string result;
@@ -2241,10 +2241,10 @@ class TTSServer {
     int port_;
     ptt_socket_t server_fd_ = PTT_INVALID_SOCKET;
     std::mutex tts_mutex_;
-    
+
 public:
     TTSServer(PocketTTS& tts, int port) : tts_(tts), port_(port) {}
-    
+
     ~TTSServer() {
         if (server_fd_ != PTT_INVALID_SOCKET && server_fd_ == g_server_fd) {
             ptt_close(server_fd_);
@@ -2255,7 +2255,7 @@ public:
         WSACleanup();
 #endif
     }
-    
+
     bool start() {
 #ifdef _WIN32
         WSADATA wsa;
@@ -2270,43 +2270,43 @@ public:
             return false;
         }
         g_server_fd = server_fd_;
-        
+
         int opt = 1;
         setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
-        
+
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = INADDR_ANY;
         addr.sin_port = htons(port_);
-        
+
         if (bind(server_fd_, (sockaddr*)&addr, sizeof(addr)) < 0) {
             std::cerr << "Failed to bind to port " << port_ << "\n";
             return false;
         }
-        
+
         if (listen(server_fd_, 5) < 0) {
             std::cerr << "Failed to listen\n";
             return false;
         }
-        
+
         std::cout << "TTS Server listening on http://localhost:" << port_ << "\n";
         std::cout << "Endpoints:\n";
         std::cout << "  POST /v1/audio/speech - OpenAI-compatible TTS (JSON: {\"input\": \"...\", \"voice\": \"...\"})\n";
         std::cout << "  POST /tts            - Streaming TTS (JSON: {\"text\": \"...\", \"voice\": \"...\"})\n";
         std::cout << "  GET  /health         - Health check\n";
         std::cout << "Press Ctrl+C to stop\n\n";
-        
+
         return true;
     }
-    
+
     void run() {
         while (g_server_running) {
             sockaddr_in client_addr{};
             socklen_t client_len = sizeof(client_addr);
-            
+
             ptt_socket_t client_fd = accept(server_fd_, (sockaddr*)&client_addr, &client_len);
             if (client_fd == PTT_INVALID_SOCKET) break;
-            
+
 #ifdef _WIN32
             DWORD tv = 30000;  // milliseconds
             setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
@@ -2316,12 +2316,12 @@ public:
             tv.tv_usec = 0;
             setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 #endif
-            
+
             handle_request(client_fd);
             ptt_close(client_fd);
         }
     }
-    
+
 private:
     static bool ptt_send(ptt_socket_t fd, const void* data, size_t len) {
         int flags = 0;
@@ -2337,7 +2337,7 @@ private:
         }
         return true;
     }
-    
+
     void send_response(ptt_socket_t fd, int status, const std::string& content_type, const std::string& body) {
         std::string status_text = (status == 200) ? "OK" : (status == 404) ? "Not Found" : "Bad Request";
         std::ostringstream resp;
@@ -2349,15 +2349,15 @@ private:
         resp << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
         resp << "\r\n";
         resp << body;
-        
+
         std::string data = resp.str();
         ptt_send(fd, data.c_str(), data.size());
     }
-    
+
     void send_binary_response(ptt_socket_t fd, const std::string& content_type, const std::vector<uint8_t>& body) {
         send_binary_response(fd, content_type, body.data(), body.size());
     }
-    
+
     void send_binary_response(ptt_socket_t fd, const std::string& content_type, const void* data, size_t len) {
         std::ostringstream resp;
         resp << "HTTP/1.1 200 OK\r\n";
@@ -2366,22 +2366,22 @@ private:
         resp << "Access-Control-Allow-Origin: *\r\n";
         resp << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
         resp << "\r\n";
-        
+
         std::string header = resp.str();
         ptt_send(fd, header.c_str(), header.size());
         ptt_send(fd, data, len);
     }
-    
+
     // Encode float PCM samples as a WAV file in memory
     static std::vector<uint8_t> wav_encode(const float* samples, size_t count, int sample_rate) {
         uint32_t data_size = count * sizeof(float);
         uint32_t file_size = 36 + data_size;
-        
+
         std::vector<uint8_t> buf(44 + data_size);
         auto w = [&](size_t off, const void* src, size_t n) { memcpy(buf.data() + off, src, n); };
         auto w32 = [&](size_t off, uint32_t v) { memcpy(buf.data() + off, &v, 4); };
         auto w16 = [&](size_t off, uint16_t v) { memcpy(buf.data() + off, &v, 2); };
-        
+
         w(0, "RIFF", 4);
         w32(4, file_size);
         w(8, "WAVE", 4);
@@ -2396,10 +2396,10 @@ private:
         w(36, "data", 4);
         w32(40, data_size);
         memcpy(buf.data() + 44, samples, data_size);
-        
+
         return buf;
     }
-    
+
     bool send_chunked_header(ptt_socket_t fd, const std::string& content_type) {
         std::ostringstream resp;
         resp << "HTTP/1.1 200 OK\r\n";
@@ -2407,11 +2407,11 @@ private:
         resp << "Transfer-Encoding: chunked\r\n";
         resp << "Access-Control-Allow-Origin: *\r\n";
         resp << "\r\n";
-        
+
         std::string data = resp.str();
         return ptt_send(fd, data.c_str(), data.size());
     }
-    
+
     bool send_chunk(ptt_socket_t fd, const void* data, size_t len) {
         char size_buf[32];
         snprintf(size_buf, sizeof(size_buf), "%zx\r\n", len);
@@ -2419,48 +2419,48 @@ private:
         if (!ptt_send(fd, data, len)) return false;
         return ptt_send(fd, "\r\n", 2);
     }
-    
+
     bool send_final_chunk(ptt_socket_t fd) {
         return ptt_send(fd, "0\r\n\r\n", 5);
     }
-    
+
     void handle_request(ptt_socket_t client_fd) {
         auto req = HttpRequest::parse(client_fd);
-        
+
         char client_ip[INET_ADDRSTRLEN];
         sockaddr_in addr;
         socklen_t len = sizeof(addr);
         getpeername(client_fd, (sockaddr*)&addr, &len);
         inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
         std::cout << client_ip << " " << req.method << " " << req.path << "\n";
-        
+
         if (req.method == "OPTIONS") {
             send_response(client_fd, 200, "text/plain", "");
             return;
         }
-        
+
         if (req.method == "GET" && req.path == "/health") {
             send_response(client_fd, 200, "application/json", "{\"status\":\"ok\"}");
         }
         else if (req.method == "POST" && req.path == "/tts") {
             std::string text = json_get_string(req.body, "text");
             std::string voice = json_get_string(req.body, "voice");
-            
+
             if (text.empty() || voice.empty()) {
                 send_response(client_fd, 400, "application/json", "{\"error\":\"Missing text or voice\"}");
                 return;
             }
-            
+
             auto start = std::chrono::high_resolution_clock::now();
             std::cout << "  Generating: \"" << text << "\" with voice '" << voice << "'\n";
-            
+
             try {
                 send_chunked_header(client_fd, "audio/pcm;rate=24000;encoding=float;bits=32");
-                
+
                 bool first_chunk = true;
                 bool client_disconnected = false;
                 size_t total_samples = 0;
-                
+
                 {
                     std::lock_guard<std::mutex> lock(tts_mutex_);
                     tts_.stream(text, voice, [&](const float* samples, size_t n) {
@@ -2478,13 +2478,13 @@ private:
                         return true;
                     });
                 }
-                
+
                 if (client_disconnected) {
                     std::cout << "  Client disconnected during stream\n";
                 } else {
                     send_final_chunk(client_fd);
                 }
-                
+
                 auto end = std::chrono::high_resolution_clock::now();
                 double elapsed = std::chrono::duration<double>(end - start).count();
                 double duration = double(total_samples) / PocketTTS::SR;
@@ -2501,34 +2501,34 @@ private:
             std::string voice = json_get_string(req.body, "voice");
             std::string format = json_get_string(req.body, "response_format");
             if (format.empty()) format = "wav";
-            
+
             if (text.empty() || voice.empty()) {
-                send_response(client_fd, 400, "application/json", 
+                send_response(client_fd, 400, "application/json",
                     "{\"error\":{\"message\":\"Missing 'input' or 'voice'\",\"type\":\"invalid_request_error\"}}");
                 return;
             }
-            
+
             if (format != "wav" && format != "pcm") {
                 send_response(client_fd, 400, "application/json",
                     "{\"error\":{\"message\":\"Unsupported response_format. Use 'wav' or 'pcm'.\",\"type\":\"invalid_request_error\"}}");
                 return;
             }
-            
+
             auto start = std::chrono::high_resolution_clock::now();
             std::cout << "  [OpenAI] Generating: \"" << text << "\" with voice '" << voice << "' (format: " << format << ")\n";
-            
+
             try {
                 AudioData audio;
                 {
                     std::lock_guard<std::mutex> lock(tts_mutex_);
                     audio = tts_.generate(text, voice);
                 }
-                
+
                 auto end = std::chrono::high_resolution_clock::now();
                 double elapsed = std::chrono::duration<double>(end - start).count();
                 double duration = audio.duration_sec();
                 std::cout << "  Done: " << std::fixed << std::setprecision(2) << duration << "s audio in " << elapsed << "s (RTFx: " << duration/elapsed << "x)\n";
-                
+
                 if (format == "pcm") {
                     send_binary_response(client_fd, "audio/pcm",
                         audio.samples.data(), audio.samples.size() * sizeof(float));
@@ -2690,7 +2690,7 @@ int main(int argc, char* argv[]) {
     int server_port = 8080;
     std::string text, voice, output;
     int pos = 0;
-    
+
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> char* {
@@ -2744,57 +2744,57 @@ int main(int argc, char* argv[]) {
         else if (a[0] == '-') { std::cerr << "Unknown: " << a << "\n"; return 1; }
         else { if (pos == 0) text = a; else if (pos == 1) voice = a; else if (pos == 2) output = a; pos++; }
     }
-    
+
     if (!server_mode) {
         if (pos < 2) { std::cerr << "Need: TEXT VOICE [OUTPUT]\n"; return 1; }
         if (pos < 3 && !stdout_output) { std::cerr << "Need OUTPUT file (or use --stdout)\n"; return 1; }
-        
+
         if (stdout_output) {
             cfg.verbose = false;
             pocket_tts::g_prof.enabled = false;
         }
     }
-    
+
     try {
         int threads = cfg.num_threads ? cfg.num_threads : std::max(2, int(std::thread::hardware_concurrency()) / 2);
-        
+
         if (!stdout_output) {
             std::cerr << "Loading (precision=" << cfg.precision << ", threads=" << threads << ")...\n";
         }
-        
+
         auto t0 = std::chrono::high_resolution_clock::now();
         pocket_tts::PocketTTS tts(cfg);
         auto elapsed = [&]() { return std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t0).count(); };
-        
+
         if (!stdout_output) {
             std::cerr << "  Loaded in " << std::fixed << std::setprecision(2) << elapsed() << "s\n";
         }
-        
+
         if (server_mode) {
             double warmup_ms = tts.warmup();
             std::cerr << "  Warmup in " << std::fixed << std::setprecision(0) << warmup_ms << "ms\n";
-            
+
             signal(SIGINT, signal_handler);
             signal(SIGTERM, signal_handler);
 #ifndef _WIN32
             signal(SIGPIPE, SIG_IGN);
 #endif
-            
+
             pocket_tts::TTSServer server(tts, server_port);
             if (!server.start()) return 1;
             server.run();
         }
         else {
             tts.reset_profiling();
-            
+
             if (!stdout_output) {
                 std::cerr << "Generating: \"" << text << "\" with " << voice << "\n";
             }
             t0 = std::chrono::high_resolution_clock::now();
-            
+
             pocket_tts::AudioData audio;
             double first_chunk_latency = 0;
-            
+
             if (stdout_output) {
 #ifdef _WIN32
                 _setmode(_fileno(stdout), _O_BINARY);
@@ -2832,15 +2832,15 @@ int main(int argc, char* argv[]) {
                     audio = tts.generate(text, voice);
                 }
             }
-            
+
             double gen_time = elapsed();
             double duration = audio.duration_sec();
-            
+
             if (!stdout_output) {
-                std::cerr << "  " << std::fixed << std::setprecision(2) 
+                std::cerr << "  " << std::fixed << std::setprecision(2)
                           << duration << "s audio in " << gen_time << "s (RTFx: " << duration / gen_time << "x)\n";
                 if (pocket_tts::g_prof.enabled) {
-                    std::cerr << "  First chunk latency: " << std::fixed << std::setprecision(0) 
+                    std::cerr << "  First chunk latency: " << std::fixed << std::setprecision(0)
                               << first_chunk_latency << "ms\n";
                 }
                 pocket_tts::PocketTTS::save_audio(audio, output);
@@ -2849,16 +2849,16 @@ int main(int argc, char* argv[]) {
                 std::cerr << "  " << std::fixed << std::setprecision(2)
                           << duration << "s audio in " << gen_time << "s (RTFx: " << duration / gen_time << "x)\n";
                 if (pocket_tts::g_prof.enabled) {
-                    std::cerr << "  First chunk latency: " << std::fixed << std::setprecision(0) 
+                    std::cerr << "  First chunk latency: " << std::fixed << std::setprecision(0)
                               << first_chunk_latency << "ms\n";
                 }
             }
-            
+
             if (pocket_tts::g_prof.enabled) {
                 tts.print_profiling_report();
             }
         }
-        
+
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
