@@ -2595,6 +2595,44 @@ void ptt_destroy(void* handle) {
     delete static_cast<pocket_tts::PocketTTS*>(handle);
 }
 
+int ptt_generate(
+    void* handle, const char* text, const char* voice, uint64_t seed,
+    float temperature, int lsd_steps, float eos_threshold, float noise_clamp,
+    int first_chunk_frames, int max_chunk_frames, int eos_extra_frames,
+    bool verbose, bool voice_cache, float** out_samples, int* out_len,
+    const char* output_path
+) {
+    if (!handle || !text || !voice || !out_samples || !out_len) return 0;
+
+    try {
+        pocket_tts::rng::set_seed(seed);
+
+        auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
+        pocket_tts::Config& cfg = tts->config();
+        cfg.temperature = temperature;
+        cfg.lsd_steps = lsd_steps;
+        cfg.eos_threshold = eos_threshold;
+        cfg.noise_clamp = noise_clamp;
+        cfg.first_chunk_frames = first_chunk_frames;
+        cfg.max_chunk_frames = max_chunk_frames;
+        cfg.eos_extra_frames = eos_extra_frames;
+        cfg.verbose = verbose;
+        cfg.voice_cache = voice_cache;
+
+        pocket_tts::AudioData audio = tts->generate(text, voice);
+        *out_len = (int)audio.samples.size();
+        *out_samples = (float*)malloc(sizeof(float) * audio.samples.size());
+
+        if (!*out_len || !*out_samples) return -1; // No frames produced.
+
+        std::memcpy(*out_samples, audio.samples.data(), sizeof(float) * audio.samples.size());
+        if (output_path) pocket_tts::PocketTTS::save_audio(audio, output_path);
+        return 1;
+    } catch (const std::exception& e) {
+        return 0;
+    }
+}
+
 // ── Streaming API ───────────────────────────────────────────────────────────
 
 struct ptt_stream_ctx {
@@ -2613,6 +2651,7 @@ void* ptt_stream_start(
     bool verbose, bool voice_cache
 ) {
     if (!handle || !text || !voice) return nullptr;
+
     pocket_tts::rng::set_seed(seed);
 
     auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
