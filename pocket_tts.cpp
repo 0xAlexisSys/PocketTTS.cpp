@@ -218,6 +218,8 @@ float normal(float mean = 0, float stddev = 1) {
 void fill_normal(float* data, size_t n, float mean = 0, float stddev = 1) {
     for (size_t i = 0; i < n; ++i) data[i] = normal(mean, stddev);
 }
+
+void set_seed(uint64_t new_seed) { seed(new_seed == 0 ? uint64_t(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : new_seed); }
 } // namespace rng
 
 // ── Audio Resampling (Lanczos) ──────────────────────────────────────────────
@@ -1397,7 +1399,7 @@ public:
     static constexpr int SR = 24000;
     
     explicit PocketTTS(const Config& cfg = {}) : cfg_(cfg) {
-        rng::seed(cfg.seed == 0 ? uint64_t(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : cfg.seed);
+        rng::set_seed(cfg.seed);
         tok_ = std::make_unique<Tokenizer>(cfg_.tokenizer_path);
         
         // Thread budget: --threads sets the total. During pipelined streaming,
@@ -2558,14 +2560,13 @@ extern "C" {
 
 void* ptt_create(const char* models_dir, const char* voices_dir,
                  const char* tokenizer_path, const char* precision,
-                 uint64_t seed, float temperature, int lsd_steps, int num_threads) {
+                 float temperature, int lsd_steps, int num_threads) {
     try {
         pocket_tts::Config cfg;
         if (models_dir) cfg.models_dir = models_dir;
         if (voices_dir) cfg.voices_dir = voices_dir;
         if (tokenizer_path) cfg.tokenizer_path = tokenizer_path;
         if (precision) cfg.precision = precision;
-        cfg.seed = seed;
         cfg.temperature = temperature;
         cfg.lsd_steps = lsd_steps;
         cfg.num_threads = num_threads;
@@ -2605,8 +2606,10 @@ struct ptt_stream_ctx {
     bool aborted = false;
 };
 
-void* ptt_stream_start(void* handle, const char* text, const char* voice) {
+void* ptt_stream_start(void* handle, const char* text, const char* voice, uint64_t seed) {
     if (!handle || !text || !voice) return nullptr;
+    pocket_tts::rng::set_seed(seed);
+
     auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
     auto* ctx = new ptt_stream_ctx();
 
