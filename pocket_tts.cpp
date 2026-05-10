@@ -1398,6 +1398,8 @@ class PocketTTS {
 public:
     static constexpr int SR = 24000;
 
+    Config& config() { return cfg_; }
+
     explicit PocketTTS(const Config& cfg = {}) : cfg_(cfg) {
         rng::set_seed(cfg.seed);
         tok_ = std::make_unique<Tokenizer>(cfg_.tokenizer_path);
@@ -2560,15 +2562,13 @@ extern "C" {
 
 void* ptt_create(const char* models_dir, const char* voices_dir,
                  const char* tokenizer_path, const char* precision,
-                 float temperature, int lsd_steps, int num_threads) {
+                 int num_threads) {
     try {
         pocket_tts::Config cfg;
         if (models_dir) cfg.models_dir = models_dir;
         if (voices_dir) cfg.voices_dir = voices_dir;
         if (tokenizer_path) cfg.tokenizer_path = tokenizer_path;
         if (precision) cfg.precision = precision;
-        cfg.temperature = temperature;
-        cfg.lsd_steps = lsd_steps;
         cfg.num_threads = num_threads;
         return new pocket_tts::PocketTTS(cfg);
     } catch (const std::exception& e) {
@@ -2606,11 +2606,27 @@ struct ptt_stream_ctx {
     bool aborted = false;
 };
 
-void* ptt_stream_start(void* handle, const char* text, const char* voice, uint64_t seed) {
+void* ptt_stream_start(
+    void* handle, const char* text, const char* voice, uint64_t seed,
+    float temperature, int lsd_steps, float eos_threshold, float noise_clamp,
+    int first_chunk_frames, int max_chunk_frames, int eos_extra_frames,
+    bool verbose, bool voice_cache
+) {
     if (!handle || !text || !voice) return nullptr;
     pocket_tts::rng::set_seed(seed);
 
     auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
+    pocket_tts::Config& cfg = tts->config();
+    cfg.temperature = temperature;
+    cfg.lsd_steps = lsd_steps;
+    cfg.eos_threshold = eos_threshold;
+    cfg.noise_clamp = noise_clamp;
+    cfg.first_chunk_frames = first_chunk_frames;
+    cfg.max_chunk_frames = max_chunk_frames;
+    cfg.eos_extra_frames = eos_extra_frames;
+    cfg.verbose = verbose;
+    cfg.voice_cache = voice_cache;
+
     auto* ctx = new ptt_stream_ctx();
 
     ctx->thread = std::thread([tts, t = std::string(text), v = std::string(voice), ctx]() {
