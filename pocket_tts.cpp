@@ -587,7 +587,7 @@ public:
         size_t num_in = sess_.GetInputCount();
         for (size_t i = 0; i < num_in; ++i) {
             auto n = sess_.GetInputNameAllocated(i, alloc);
-            in_names_.push_back(n.get());
+            in_names_.emplace_back(n.get());
             auto ti = sess_.GetInputTypeInfo(i);
             auto tsi = ti.GetTensorTypeAndShapeInfo();
             in_shapes_.push_back(tsi.GetShape());
@@ -597,7 +597,7 @@ public:
         size_t num_out = sess_.GetOutputCount();
         for (size_t i = 0; i < num_out; ++i) {
             auto n = sess_.GetOutputNameAllocated(i, alloc);
-            out_names_.push_back(n.get());
+            out_names_.emplace_back(n.get());
         }
 
         for (const auto& n : in_names_) in_ptrs_.push_back(n.c_str());
@@ -711,19 +711,19 @@ struct StateBufferIO {
 
             for (int b = 0; b < 2; ++b) {
                 if (in_types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
-                    i64[b].push_back(std::vector<int64_t>(alloc, 0));
-                    f32[b].push_back({}); f16[b].push_back({}); b8[b].push_back({});
+                    i64[b].emplace_back(alloc, 0);
+                    f32[b].emplace_back(); f16[b].emplace_back(); b8[b].emplace_back();
                 } else if (in_types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL) {
-                    b8[b].push_back(std::vector<uint8_t>(alloc, 0));
-                    f32[b].push_back({}); f16[b].push_back({}); i64[b].push_back({});
+                    b8[b].emplace_back(alloc, 0);
+                    f32[b].emplace_back(); f16[b].emplace_back(); i64[b].emplace_back();
                 } else if (in_types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
                     // Single-buffered: only buffer 0 is allocated.
                     // Both input and output bind to buffer 0, enabling in-place scatter.
                     f16[b].push_back(b == 0 ? std::vector<uint16_t>(alloc, 0) : std::vector<uint16_t>());
-                    f32[b].push_back({}); i64[b].push_back({}); b8[b].push_back({});
+                    f32[b].emplace_back(); i64[b].emplace_back(); b8[b].emplace_back();
                 } else {
-                    f32[b].push_back(std::vector<float>(alloc, 0.0f));
-                    f16[b].push_back({}); i64[b].push_back({}); b8[b].push_back({});
+                    f32[b].emplace_back(alloc, 0.0f);
+                    f16[b].emplace_back(); i64[b].emplace_back(); b8[b].emplace_back();
                 }
             }
         }
@@ -1312,7 +1312,7 @@ public:
             if (out_names[i].find("out_state_") == 0) {
                 if (state_.is_dynamic[state_idx]) {
                     binding_->BindOutput(out_names[i].c_str(), mem_);
-                    dynamic_out_states.push_back({i, state_idx});
+                    dynamic_out_states.emplace_back(i, state_idx);
                 } else {
                     binding_->BindOutput(out_names[i].c_str(), state_.create_output_value(state_idx, mem_));
                 }
@@ -2675,7 +2675,7 @@ void* ptt_stream_start(
                 {
                     std::lock_guard<std::mutex> lock(ctx->mtx);
                     if (ctx->aborted) { free(copy); return false; }
-                    ctx->chunks.push_back({copy, n});
+                    ctx->chunks.emplace_back(copy, n);
                 }
                 ctx->cv.notify_one();
                 return true;
