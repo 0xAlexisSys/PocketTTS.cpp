@@ -197,11 +197,11 @@ static uint64_t next() {
 }
 
 void seed(uint64_t v) {
-    for (int i = 0; i < 4; ++i) {
+    for (unsigned long & i : s) {
         v += 0x9E3779B97F4A7C15ULL;
         uint64_t z = (v ^ (v >> 30)) * 0xBF58476D1CE4E5B9ULL;
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-        s[i] = z ^ (z >> 31);
+        i = z ^ (z >> 31);
     }
 }
 
@@ -1298,11 +1298,11 @@ public:
 
         size_t non_state_idx = 0;
         size_t state_idx = 0;
-        for (size_t i = 0; i < in_names.size(); ++i) {
-            if (in_names[i].find("state_") == 0) {
-                binding_->BindInput(in_names[i].c_str(), state_.create_input_value(state_idx++, mem_));
+        for (const auto & in_name : in_names) {
+            if (in_name.find("state_") == 0) {
+                binding_->BindInput(in_name.c_str(), state_.create_input_value(state_idx++, mem_));
             } else {
-                binding_->BindInput(in_names[i].c_str(), non_state_inputs[non_state_idx++]);
+                binding_->BindInput(in_name.c_str(), non_state_inputs[non_state_idx++]);
             }
         }
 
@@ -2000,8 +2000,8 @@ void PocketTTS::stream(const std::string& text, const Tensor& voice, StreamCallb
     auto sentences = split_sentences(text);
     if (sentences.empty()) sentences.push_back(text);
 
-    for (size_t si = 0; si < sentences.size(); ++si) {
-        auto [prepared, eos_extra] = prepare_text(sentences[si], cfg_.eos_extra_frames);
+    for (const auto & sentence : sentences) {
+        auto [prepared, eos_extra] = prepare_text(sentence, cfg_.eos_extra_frames);
         if (prepared.empty()) continue;
         auto gen = make_gen(voice, tokenize(prepared), max_frames, eos_extra);
         dec_runner_->reset_state();  // zero existing buffers, no reallocation
