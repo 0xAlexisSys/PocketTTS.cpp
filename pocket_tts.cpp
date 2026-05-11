@@ -2282,7 +2282,7 @@ public:
         addr.sin_addr.s_addr = INADDR_ANY;
         addr.sin_port = htons(port_);
 
-        if (bind(server_fd_, (sockaddr*)&addr, sizeof(addr)) < 0) {
+        if (bind(server_fd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
             std::cerr << "Failed to bind to port " << port_ << "\n";
             return false;
         }
@@ -2307,7 +2307,7 @@ public:
             sockaddr_in client_addr{};
             socklen_t client_len = sizeof(client_addr);
 
-            ptt_socket_t client_fd = accept(server_fd_, (sockaddr*)&client_addr, &client_len);
+            ptt_socket_t client_fd = accept(server_fd_, reinterpret_cast<sockaddr *>(&client_addr), &client_len);
             if (client_fd == PTT_INVALID_SOCKET) break;
 
 #ifdef _WIN32
@@ -2433,7 +2433,7 @@ private:
         char client_ip[INET_ADDRSTRLEN];
         sockaddr_in addr;
         socklen_t len = sizeof(addr);
-        getpeername(client_fd, (sockaddr*)&addr, &len);
+        getpeername(client_fd, reinterpret_cast<sockaddr *>(&addr), &len);
         inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
         std::cout << client_ip << " " << req.method << " " << req.path << "\n";
 
