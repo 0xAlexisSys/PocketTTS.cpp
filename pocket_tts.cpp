@@ -115,7 +115,7 @@ struct Tensor {
     Tensor squeeze(int64_t dim = -1) const {
         std::vector<int64_t> ns;
         for (size_t i = 0; i < shape.size(); ++i)
-            if (shape[i] != 1 || (dim >= 0 && (int64_t)i != dim)) ns.push_back(shape[i]);
+            if (shape[i] != 1 || (dim >= 0 && static_cast<int64_t>(i) != dim)) ns.push_back(shape[i]);
         if (ns.empty()) ns.push_back(1);
         return Tensor(data, ns);
     }
@@ -174,7 +174,7 @@ struct Config {
 struct AudioData {
     std::vector<float> samples;
     int sample_rate = 24000;
-    float duration_sec() const { return float(samples.size()) / sample_rate; }
+    float duration_sec() const { return static_cast<float>(samples.size()) / sample_rate; }
 };
 
 using StreamCallback = std::function<bool(const float*, size_t)>;
@@ -217,7 +217,7 @@ void fill_normal(float* data, size_t n, float mean = 0, float stddev = 1) {
     for (size_t i = 0; i < n; ++i) data[i] = normal(mean, stddev);
 }
 
-void set_seed(uint64_t new_seed) { seed(new_seed == 0 ? uint64_t(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : new_seed); }
+void set_seed(uint64_t new_seed) { seed(new_seed == 0 ? static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : new_seed); }
 } // namespace rng
 
 // ── Audio Resampling (Lanczos) ──────────────────────────────────────────────
@@ -226,19 +226,19 @@ static std::vector<float> resample(const std::vector<float>& in, int src, int ds
     if (src == dst) return in;
     constexpr int K = 16;
     constexpr float PI = 3.14159265358979323846f;
-    double ratio = double(dst) / src;
-    std::vector<float> out(size_t(in.size() * ratio));
+    double ratio = static_cast<double>(dst) / src;
+    std::vector<float> out(static_cast<size_t>(in.size() * ratio));
 
     auto sinc = [&](float x) { return std::abs(x) < 1e-6f ? 1.0f : std::sin(PI * x) / (PI * x); };
     auto lanczos = [&](float x) { return std::abs(x) >= K ? 0.0f : sinc(x) * sinc(x / K); };
 
     for (size_t i = 0; i < out.size(); ++i) {
         double sp = i / ratio;
-        int64_t c = int64_t(sp);
-        float f = float(sp - c), sample = 0, wsum = 0;
+        int64_t c = static_cast<int64_t>(sp);
+        float f = static_cast<float>(sp - c), sample = 0, wsum = 0;
         for (int k = -K + 1; k <= K; ++k) {
             int64_t idx = c + k;
-            if (idx >= 0 && idx < int64_t(in.size())) {
+            if (idx >= 0 && idx < static_cast<int64_t>(in.size())) {
                 float w = lanczos(k - f);
                 sample += in[idx] * w;
                 wsum += w;
@@ -260,9 +260,9 @@ static std::vector<std::string> split_sentences(const std::string& text) {
     auto is_abbreviation = [](const std::string& s, size_t dot_pos) -> bool {
         if (dot_pos < 2) return false;
         size_t start = dot_pos;
-        while (start > 0 && std::isalpha((unsigned char)s[start - 1])) start--;
+        while (start > 0 && std::isalpha(static_cast<unsigned char>(s[start - 1]))) start--;
         std::string word = s.substr(start, dot_pos - start);
-        for (auto& c : word) c = std::tolower((unsigned char)c);
+        for (auto& c : word) c = std::tolower(static_cast<unsigned char>(c));
         return word == "mr" || word == "mrs" || word == "ms" || word == "dr" ||
                word == "st" || word == "jr" || word == "sr" || word == "vs" ||
                word == "etc" || word == "inc" || word == "ltd" || word == "prof" ||
@@ -303,7 +303,7 @@ static int count_words(const std::string& text) {
     int count = 0;
     bool in_word = false;
     for (char c : text) {
-        if (std::isspace((unsigned char)c)) { in_word = false; }
+        if (std::isspace(static_cast<unsigned char>(c))) { in_word = false; }
         else if (!in_word) { in_word = true; count++; }
     }
     return count;
@@ -353,11 +353,11 @@ static std::pair<std::string, int> prepare_text(const std::string& raw, int cfg_
     int eos_extra = cfg_eos_extra >= 0 ? cfg_eos_extra : ((nwords <= 4) ? 5 : 3);
 
     // Capitalize first letter
-    if (!text.empty() && std::islower((unsigned char)text[0]))
-        text[0] = std::toupper((unsigned char)text[0]);
+    if (!text.empty() && std::islower(static_cast<unsigned char>(text[0])))
+        text[0] = std::toupper(static_cast<unsigned char>(text[0]));
 
     // Ensure ends with punctuation
-    if (!text.empty() && std::isalnum((unsigned char)text.back()))
+    if (!text.empty() && std::isalnum(static_cast<unsigned char>(text.back())))
         text += '.';
 
     // Pad short text — model doesn't perform well with very few tokens
@@ -748,9 +748,9 @@ struct StateBufferIO {
                     i64[b][i].clear(); b8[b][i].clear();
                 } else {
                     std::fill(f32[b][i].begin(), f32[b][i].end(), 0.0f);
-                    std::fill(f16[0][i].begin(), f16[0][i].end(), uint16_t(0));
-                    std::fill(i64[b][i].begin(), i64[b][i].end(), int64_t(0));
-                    std::fill(b8[b][i].begin(), b8[b][i].end(), uint8_t(0));
+                    std::fill(f16[0][i].begin(), f16[0][i].end(), static_cast<uint16_t>(0));
+                    std::fill(i64[b][i].begin(), i64[b][i].end(), static_cast<int64_t>(0));
+                    std::fill(b8[b][i].begin(), b8[b][i].end(), static_cast<uint8_t>(0));
                 }
             }
         }
@@ -891,7 +891,7 @@ struct StateBufferIO {
 
             int seq_dim = -1;
             for (size_t d = 0; d < shapes[i].size(); ++d) {
-                if (shapes[i][d] == 1000) { seq_dim = (int)d; break; }
+                if (shapes[i][d] == 1000) { seq_dim = static_cast<int>(d); break; }
             }
             if (seq_dim < 0) continue;
 
@@ -1000,7 +1000,7 @@ struct StateBufferIO {
 
                 int sd = -1;
                 for (size_t d = 0; d < init_shapes[i].size(); ++d) {
-                    if (snap.shapes[i][d] != init_shapes[i][d]) { sd = (int)d; break; }
+                    if (snap.shapes[i][d] != init_shapes[i][d]) { sd = static_cast<int>(d); break; }
                 }
 
                 if (has_f16) {
@@ -1067,12 +1067,12 @@ struct StateBufferIO {
         uint8_t* p = ds.blob.data();
         auto write = [&](const void* src, size_t bytes) { memcpy(p, src, bytes); p += bytes; };
 
-        int32_t cb = snap.current_buf, ns = int32_t(n);
+        int32_t cb = snap.current_buf, ns = static_cast<int32_t>(n);
         write(&cb, 4); write(&ns, 4);
 
         for (size_t i = 0; i < n; ++i) {
-            int32_t ndims = int32_t(snap.shapes[i].size());
-            int32_t type = int32_t(types[i]);
+            int32_t ndims = static_cast<int32_t>(snap.shapes[i].size());
+            int32_t type = static_cast<int32_t>(types[i]);
             write(&ndims, 4);
             write(snap.shapes[i].data(), ndims * 8);
             write(&type, 4);
@@ -1134,7 +1134,7 @@ struct StateBufferIO {
                     f16[0][i].resize(full_size);
                     int sd = -1;
                     for (size_t d = 0; d < init_shapes[i].size(); ++d) {
-                        if (loaded_shape[d] != init_shapes[i][d]) { sd = (int)d; break; }
+                        if (loaded_shape[d] != init_shapes[i][d]) { sd = static_cast<int>(d); break; }
                     }
                     if (sd >= 0) {
                         int64_t N = loaded_shape[sd];
@@ -1164,7 +1164,7 @@ struct StateBufferIO {
                     f32[b][i].resize(full_size);
                     int sd = -1;
                     for (size_t d = 0; d < init_shapes[i].size(); ++d) {
-                        if (loaded_shape[d] != init_shapes[i][d]) { sd = (int)d; break; }
+                        if (loaded_shape[d] != init_shapes[i][d]) { sd = static_cast<int>(d); break; }
                     }
                     if (sd >= 0) {
                         int64_t N = loaded_shape[sd];
@@ -1406,7 +1406,7 @@ public:
         // the AR generator and Mimi decoder run simultaneously, so we split the
         // budget between them. Non-pipelined models (encoder, text conditioner)
         // get the full budget since they run alone.
-        int cores = std::max(1, int(std::thread::hardware_concurrency()));
+        int cores = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
         int total = cfg_.num_threads ? cfg_.num_threads : std::max(2, cores / 2);
         // Balance threads so gen thread and decoder thread finish at roughly the same time.
         // AR is compute-dense per step; decoder has fewer but heavier calls.
@@ -1471,7 +1471,7 @@ public:
         dt_ = 1.0f / cfg_.lsd_steps;
         st_values_.reserve(cfg_.lsd_steps);
         for (int j = 0; j < cfg_.lsd_steps; ++j) {
-            float s = float(j) / cfg_.lsd_steps;
+            float s = static_cast<float>(j) / cfg_.lsd_steps;
             st_values_.emplace_back(s, s + dt_);
         }
 
@@ -1493,7 +1493,7 @@ public:
         size_t dot = path.rfind('.');
         if (dot != std::string::npos) {
             ext = path.substr(dot);
-            for (auto& c : ext) c = std::tolower((unsigned char)c);
+            for (auto& c : ext) c = std::tolower(static_cast<unsigned char>(c));
         }
 
         float* raw = nullptr;
@@ -1543,7 +1543,7 @@ public:
     static void save_audio(const AudioData& a, const std::string& path) {
         auto _ = g_prof.time("save_audio");
         drwav w;
-        drwav_data_format fmt{drwav_container_riff, DR_WAVE_FORMAT_IEEE_FLOAT, 1, drwav_uint32(a.sample_rate), 32};
+        drwav_data_format fmt{drwav_container_riff, DR_WAVE_FORMAT_IEEE_FLOAT, 1, static_cast<drwav_uint32>(a.sample_rate), 32};
         if (!drwav_init_file_write(&w, path.c_str(), &fmt, nullptr))
             throw std::runtime_error("Failed to write: " + path);
         drwav_write_pcm_frames(&w, a.samples.size(), a.samples.data());
@@ -1580,7 +1580,7 @@ public:
             if (cfg_.verbose) std::cerr << "  Voice truncated to 30s\n";
         }
 
-        Tensor t({1, 1, int64_t(a.samples.size())});
+        Tensor t({1, 1, static_cast<int64_t>(a.samples.size())});
         std::copy(a.samples.begin(), a.samples.end(), t.data.begin());
 
         Ort::MemoryInfo m = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -1668,12 +1668,12 @@ private:
         size_t e = t.find_last_not_of(" \t\n\r");
         if (s == std::string::npos) throw std::runtime_error("Empty text");
         t = t.substr(s, e - s + 1);
-        if (std::isalnum((unsigned char)t.back())) t += ".";
-        if (!t.empty() && std::islower((unsigned char)t[0])) t[0] = std::toupper((unsigned char)t[0]);
+        if (std::isalnum(static_cast<unsigned char>(t.back()))) t += ".";
+        if (!t.empty() && std::islower(static_cast<unsigned char>(t[0]))) t[0] = std::toupper(static_cast<unsigned char>(t[0]));
 
         auto ids = tok_->encode(t);
         if (cfg_.verbose) std::cerr << "  Tokens: " << ids.size() << " from " << t.size() << " chars\n";
-        TensorI64 r({1, int64_t(ids.size())});
+        TensorI64 r({1, static_cast<int64_t>(ids.size())});
         for (size_t i = 0; i < ids.size(); ++i) r.data[i] = ids[i];
         return r;
     }
@@ -1881,7 +1881,7 @@ private:
 
     static uint64_t voice_hash(const Tensor& v) {
         uint64_t h = 14695981039346656037ull;
-        int n = std::min(16, int(v.data.size()));
+        int n = std::min(16, static_cast<int>(v.data.size()));
         for (int i = 0; i < n; ++i) {
             uint32_t bits;
             memcpy(&bits, &v.data[i], sizeof(bits));
@@ -1977,10 +1977,10 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
         if (chunk_samples.empty()) continue;
 
         if (i > 0 && !all_samples.empty()) {
-            int xfade = std::min(XFADE_SAMPLES, std::min(int(all_samples.size()), int(chunk_samples.size())));
+            int xfade = std::min(XFADE_SAMPLES, std::min(static_cast<int>(all_samples.size()), static_cast<int>(chunk_samples.size())));
             size_t tail_start = all_samples.size() - xfade;
             for (int j = 0; j < xfade; ++j) {
-                float t = float(j) / float(xfade);
+                float t = static_cast<float>(j) / static_cast<float>(xfade);
                 all_samples[tail_start + j] = all_samples[tail_start + j] * (1.0f - t) + chunk_samples[j] * t;
             }
             all_samples.insert(all_samples.end(), chunk_samples.begin() + xfade, chunk_samples.end());
@@ -2046,10 +2046,10 @@ void PocketTTS::stream(const std::string& text, const Tensor& voice, StreamCallb
             std::vector<Tensor> batch;
             {
                 std::unique_lock<std::mutex> lock(mtx);
-                cv.wait(lock, [&]{ return (int)queue.size() >= want || gen_done || aborted; });
+                cv.wait(lock, [&]{ return static_cast<int>(queue.size()) >= want || gen_done || aborted; });
                 if (aborted) break;
 
-                int take = gen_done ? (int)queue.size() : std::min((int)queue.size(), want);
+                int take = gen_done ? static_cast<int>(queue.size()) : std::min(static_cast<int>(queue.size()), want);
                 for (int i = 0; i < take; ++i) {
                     batch.push_back(std::move(queue.front()));
                     queue.pop_front();
@@ -2111,7 +2111,7 @@ struct HttpRequest {
             if (header_end != std::string::npos) {
                 // Case-insensitive search for Content-Length header
                 std::string lower_data = data.substr(0, header_end);
-                for (auto& c : lower_data) c = std::tolower((unsigned char)c);
+                for (auto& c : lower_data) c = std::tolower(static_cast<unsigned char>(c));
                 size_t cl_pos = lower_data.find("content-length:");
 
                 if (cl_pos != std::string::npos) {
@@ -2209,19 +2209,19 @@ static std::string json_get_string(const std::string& json, const std::string& k
                     }
                     // Encode code point as UTF-8
                     if (cp < 0x80) {
-                        result += (char)cp;
+                        result += static_cast<char>(cp);
                     } else if (cp < 0x800) {
-                        result += (char)(0xC0 | (cp >> 6));
-                        result += (char)(0x80 | (cp & 0x3F));
+                        result += static_cast<char>(0xC0 | (cp >> 6));
+                        result += static_cast<char>(0x80 | (cp & 0x3F));
                     } else if (cp < 0x10000) {
-                        result += (char)(0xE0 | (cp >> 12));
-                        result += (char)(0x80 | ((cp >> 6) & 0x3F));
-                        result += (char)(0x80 | (cp & 0x3F));
+                        result += static_cast<char>(0xE0 | (cp >> 12));
+                        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                        result += static_cast<char>(0x80 | (cp & 0x3F));
                     } else {
-                        result += (char)(0xF0 | (cp >> 18));
-                        result += (char)(0x80 | ((cp >> 12) & 0x3F));
-                        result += (char)(0x80 | ((cp >> 6) & 0x3F));
-                        result += (char)(0x80 | (cp & 0x3F));
+                        result += static_cast<char>(0xF0 | (cp >> 18));
+                        result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                        result += static_cast<char>(0x80 | (cp & 0x3F));
                     }
                     i += extra_skip;
                 } else {
@@ -2490,7 +2490,7 @@ private:
 
                 auto end = std::chrono::high_resolution_clock::now();
                 double elapsed = std::chrono::duration<double>(end - start).count();
-                double duration = double(total_samples) / PocketTTS::SR;
+                double duration = static_cast<double>(total_samples) / PocketTTS::SR;
                 std::cout << "  Done: " << std::fixed << std::setprecision(2) << duration << "s audio in " << elapsed << "s (RTFx: " << duration/elapsed << "x)\n";
             } catch (const std::exception& e) {
                 send_response(client_fd, 400, "application/json", "{\"error\":\"" + std::string(e.what()) + "\"}");
@@ -2618,8 +2618,8 @@ int ptt_generate(
         cfg.voice_cache = voice_cache;
 
         pocket_tts::AudioData audio = tts->generate(text, voice);
-        *out_len = (int)audio.samples.size();
-        *out_samples = (float*)malloc(sizeof(float) * audio.samples.size());
+        *out_len = static_cast<int>(audio.samples.size());
+        *out_samples = static_cast<float *>(malloc(sizeof(float) * audio.samples.size()));
 
         if (!*out_len || !*out_samples) return -1; // No frames produced.
 
@@ -2816,7 +2816,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        int threads = cfg.num_threads ? cfg.num_threads : std::max(2, int(std::thread::hardware_concurrency()) / 2);
+        int threads = cfg.num_threads ? cfg.num_threads : std::max(2, static_cast<int>(std::thread::hardware_concurrency()) / 2);
 
         if (!stdout_output) {
             std::cerr << "Loading (precision=" << cfg.precision << ", threads=" << threads << ")...\n";
