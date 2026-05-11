@@ -74,6 +74,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace pocket_tts {
@@ -85,7 +86,7 @@ namespace pocket_tts {
 static size_t calc_numel(const std::vector<int64_t>& shape) {
     if (shape.empty()) return 0;
     size_t n = 1;
-    for (auto d : shape) n *= (d > 0 ? d : 1);
+    for (const auto d : shape) n *= (d > 0 ? d : 1);
     return n;
 }
 
@@ -112,12 +113,12 @@ struct Tensor {
         return *this;
     }
 
-    Tensor squeeze(int64_t dim = -1) const {
+    Tensor squeeze(const int64_t dim = -1) const {
         std::vector<int64_t> ns;
         for (size_t i = 0; i < shape.size(); ++i)
             if (shape[i] != 1 || (dim >= 0 && static_cast<int64_t>(i) != dim)) ns.push_back(shape[i]);
         if (ns.empty()) ns.push_back(1);
-        return Tensor(data, ns);
+        return {data, ns};
     }
 
     static Tensor concat(const std::vector<Tensor>& ts, int64_t dim) {
@@ -136,7 +137,7 @@ struct Tensor {
 
         int64_t off = 0;
         for (const auto& t : ts) {
-            int64_t td = t.shape[dim], chunk = td * inner;
+            const int64_t td = t.shape[dim], chunk = td * inner;
             for (int64_t o = 0; o < outer; ++o)
                 std::memcpy(r.data.data() + o * total * inner + off * inner,
                            t.data.data() + o * chunk, chunk * sizeof(float));
@@ -187,10 +188,10 @@ using StreamCallback = std::function<bool(const float*, size_t)>;
 
 namespace rng {
 static uint64_t s[4] = {0x123456789ABCDEF0ULL, 0xFEDCBA9876543210ULL, 0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL};
-static inline uint64_t rotl(uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
+static inline uint64_t rotl(const uint64_t x, const int k) { return (x << k) | (x >> (64 - k)); }
 
 static uint64_t next() {
-    uint64_t result = rotl(s[1] * 5, 7) * 9, t = s[1] << 17;
+    const uint64_t result = rotl(s[1] * 5, 7) * 9, t = s[1] << 17;
     s[2] ^= s[0]; s[3] ^= s[1]; s[1] ^= s[2]; s[0] ^= s[3];
     s[2] ^= t; s[3] = rotl(s[3], 45);
     return result;
@@ -207,39 +208,39 @@ void seed(uint64_t v) {
 
 static float uniform() { return (next() >> 11) * (1.0f / 9007199254740992.0f); }
 
-float normal(float mean = 0, float stddev = 1) {
+float normal(const float mean = 0, const float stddev = 1) {
     float u1 = uniform(), u2 = uniform();
     while (u1 <= 1e-10f) u1 = uniform();
     return mean + stddev * std::sqrt(-2.0f * std::log(u1)) * std::cos(6.283185307179586f * u2);
 }
 
-void fill_normal(float* data, size_t n, float mean = 0, float stddev = 1) {
+void fill_normal(float* data, const size_t n, const float mean = 0, const float stddev = 1) {
     for (size_t i = 0; i < n; ++i) data[i] = normal(mean, stddev);
 }
 
-void set_seed(uint64_t new_seed) { seed(new_seed == 0 ? static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : new_seed); }
+void set_seed(const uint64_t new_seed) { seed(new_seed == 0 ? static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()) : new_seed); }
 } // namespace rng
 
 // ── Audio Resampling (Lanczos) ──────────────────────────────────────────────
 
-static std::vector<float> resample(const std::vector<float>& in, int src, int dst) {
+static std::vector<float> resample(const std::vector<float>& in, const int src, const int dst) {
     if (src == dst) return in;
     constexpr int K = 16;
     constexpr float PI = 3.14159265358979323846f;
-    double ratio = static_cast<double>(dst) / src;
+    const double ratio = static_cast<double>(dst) / src;
     std::vector<float> out(static_cast<size_t>(in.size() * ratio));
 
-    auto sinc = [&](float x) { return std::abs(x) < 1e-6f ? 1.0f : std::sin(PI * x) / (PI * x); };
-    auto lanczos = [&](float x) { return std::abs(x) >= K ? 0.0f : sinc(x) * sinc(x / K); };
+    auto sinc = [&](const float x) { return std::abs(x) < 1e-6f ? 1.0f : std::sin(PI * x) / (PI * x); };
+    auto lanczos = [&](const float x) { return std::abs(x) >= K ? 0.0f : sinc(x) * sinc(x / K); };
 
     for (size_t i = 0; i < out.size(); ++i) {
-        double sp = i / ratio;
-        int64_t c = static_cast<int64_t>(sp);
+        const double sp = i / ratio;
+        const int64_t c = static_cast<int64_t>(sp);
         float f = static_cast<float>(sp - c), sample = 0, wsum = 0;
         for (int k = -K + 1; k <= K; ++k) {
-            int64_t idx = c + k;
+            const int64_t idx = c + k;
             if (idx >= 0 && idx < static_cast<int64_t>(in.size())) {
-                float w = lanczos(k - f);
+                const float w = lanczos(k - f);
                 sample += in[idx] * w;
                 wsum += w;
             }
@@ -257,7 +258,7 @@ static std::vector<std::string> split_sentences(const std::string& text) {
     std::vector<std::string> sentences;
     std::string current;
 
-    auto is_abbreviation = [](const std::string& s, size_t dot_pos) -> bool {
+    auto is_abbreviation = [](const std::string& s, const size_t dot_pos) -> bool {
         if (dot_pos < 2) return false;
         size_t start = dot_pos;
         while (start > 0 && std::isalpha(static_cast<unsigned char>(s[start - 1]))) start--;
@@ -278,7 +279,7 @@ static std::vector<std::string> split_sentences(const std::string& text) {
             if (text[i] == '.' && i > 0 && text[i - 1] == '.') continue;
             if (text[i] == '.' && is_abbreviation(text, i)) continue;
             if (i + 1 >= text.size() || text[i + 1] == ' ' || text[i + 1] == '"' || text[i + 1] == '\'') {
-                size_t start = current.find_first_not_of(" \t\n\r");
+                const size_t start = current.find_first_not_of(" \t\n\r");
                 if (start != std::string::npos) {
                     sentences.push_back(current.substr(start));
                 }
@@ -288,7 +289,7 @@ static std::vector<std::string> split_sentences(const std::string& text) {
     }
 
     if (!current.empty()) {
-        size_t start = current.find_first_not_of(" \t\n\r");
+        const size_t start = current.find_first_not_of(" \t\n\r");
         if (start != std::string::npos) {
             sentences.push_back(current.substr(start));
         }
@@ -302,7 +303,7 @@ static std::vector<std::string> split_sentences(const std::string& text) {
 static int count_words(const std::string& text) {
     int count = 0;
     bool in_word = false;
-    for (char c : text) {
+    for (const char c : text) {
         if (std::isspace(static_cast<unsigned char>(c))) { in_word = false; }
         else if (!in_word) { in_word = true; count++; }
     }
@@ -317,13 +318,13 @@ static std::pair<std::string, int> prepare_text(const std::string& raw, int cfg_
     // Strip characters the model can't speak
     std::string cleaned;
     cleaned.reserve(text.size());
-    for (char c : text) {
+    for (const char c : text) {
         if (c == '"' || c == '`') continue;
         cleaned += c;
     }
     // Strip curly double quotes (UTF-8: " ")
     auto stripUtf8 = [](std::string& s, const char* seq) {
-        size_t len = strlen(seq);
+        const size_t len = strlen(seq);
         size_t pos;
         while ((pos = s.find(seq)) != std::string::npos) s.erase(pos, len);
     };
@@ -341,15 +342,15 @@ static std::pair<std::string, int> prepare_text(const std::string& raw, int cfg_
     while (text.size() >= 3 && text.substr(text.size() - 3) == "\xe2\x80\x99") text.erase(text.size() - 3);
 
     // Strip leading/trailing whitespace
-    size_t start = text.find_first_not_of(" \t\n\r");
-    size_t end = text.find_last_not_of(" \t\n\r");
+    const size_t start = text.find_first_not_of(" \t\n\r");
+    const size_t end = text.find_last_not_of(" \t\n\r");
     if (start == std::string::npos) return {"", cfg_eos_extra >= 0 ? cfg_eos_extra : 3};
     text = text.substr(start, end - start + 1);
 
     // Normalize whitespace
     for (auto& c : text) { if (c == '\n' || c == '\r') c = ' '; }
 
-    int nwords = count_words(text);
+    const int nwords = count_words(text);
     int eos_extra = cfg_eos_extra >= 0 ? cfg_eos_extra : ((nwords <= 4) ? 5 : 3);
 
     // Capitalize first letter
@@ -378,7 +379,7 @@ struct Profiler {
         int count = 0;
         double min_ms = 1e9, max_ms = 0;
 
-        void add(double ms) {
+        void add(const double ms) {
             total_ms += ms;
             count++;
             min_ms = std::min(min_ms, ms);
@@ -395,18 +396,18 @@ struct Profiler {
         std::string name;
         std::chrono::high_resolution_clock::time_point start;
     public:
-        ScopedTimer(Profiler& p, const std::string& n) : prof(p), name(n), start(std::chrono::high_resolution_clock::now()) {}
+        ScopedTimer(Profiler& p, std::string n) : prof(p), name(std::move(n)), start(std::chrono::high_resolution_clock::now()) {}
         ~ScopedTimer() {
             if (prof.enabled) {
-                auto end = std::chrono::high_resolution_clock::now();
-                double ms = std::chrono::duration<double, std::milli>(end - start).count();
+                const auto end = std::chrono::high_resolution_clock::now();
+                const double ms = std::chrono::duration<double, std::milli>(end - start).count();
                 prof.timers[name].name = name;
                 prof.timers[name].add(ms);
             }
         }
     };
 
-    ScopedTimer time(const std::string& name) { return ScopedTimer(*this, name); }
+    ScopedTimer time(const std::string& name) { return {*this, name}; }
 
     void report() const {
         std::cout << "\n========== PROFILING REPORT ==========\n";
@@ -456,7 +457,7 @@ static Profiler g_prof;
 namespace cache {
 
 static time_t get_mtime(const std::string& path) {
-    struct stat st;
+    struct stat st{};
     if (stat(path.c_str(), &st) != 0) return 0;
     return st.st_mtime;
 }
@@ -478,16 +479,16 @@ static bool mkdir_p(const std::string& path) {
 // ext = "emb" for voice embeddings, "kv" for KV state snapshots
 static std::string get_cache_path(const std::string& voices_dir, const std::string& voice_path, const char* ext = "emb") {
     std::string filename = voice_path;
-    size_t slash = voice_path.find_last_of("/\\");
+    const size_t slash = voice_path.find_last_of("/\\");
     if (slash != std::string::npos) filename = voice_path.substr(slash + 1);
-    size_t dot = filename.rfind('.');
+    const size_t dot = filename.rfind('.');
     if (dot != std::string::npos) filename = filename.substr(0, dot);
     return voices_dir + "/.cache/" + filename + "." + ext;
 }
 
 static bool is_cache_valid(const std::string& voice_path, const std::string& cache_path) {
-    time_t voice_mtime = get_mtime(voice_path);
-    time_t cache_mtime = get_mtime(cache_path);
+    const time_t voice_mtime = get_mtime(voice_path);
+    const time_t cache_mtime = get_mtime(cache_path);
     return cache_mtime > 0 && cache_mtime >= voice_mtime;
 }
 
@@ -497,7 +498,7 @@ static bool is_cache_valid(const std::string& voice_path, const std::string& cac
 static constexpr uint32_t EMB_MAGIC = 0x31424D45; // "EMB1" little-endian
 
 static bool save_embedding(const std::string& path, const std::vector<int64_t>& shape, const std::vector<float>& data) {
-    size_t slash = path.find_last_of('/');
+    const size_t slash = path.find_last_of('/');
     if (slash != std::string::npos) {
         mkdir_p(path.substr(0, slash));
     }
@@ -505,8 +506,8 @@ static bool save_embedding(const std::string& path, const std::vector<int64_t>& 
     std::ofstream f(path, std::ios::binary);
     if (!f) return false;
 
-    uint32_t magic = EMB_MAGIC;
-    int32_t ndims = static_cast<int32_t>(shape.size());
+    constexpr uint32_t magic = EMB_MAGIC;
+    const int32_t ndims = static_cast<int32_t>(shape.size());
 
     f.write(reinterpret_cast<const char*>(&magic), 4);
     f.write(reinterpret_cast<const char*>(&ndims), 4);
@@ -580,11 +581,11 @@ class OrtSession {
     std::string name_;
 
 public:
-    OrtSession(Ort::Env& env, const std::string& path, const Ort::SessionOptions& opts, const std::string& name = "")
+    OrtSession(const Ort::Env& env, const std::string& path, const Ort::SessionOptions& opts, const std::string& name = "")
         : sess_(env, to_ort_path(path).c_str(), opts), name_(name.empty() ? path : name) {
-        Ort::AllocatorWithDefaultOptions alloc;
+        const Ort::AllocatorWithDefaultOptions alloc;
 
-        size_t num_in = sess_.GetInputCount();
+        const size_t num_in = sess_.GetInputCount();
         for (size_t i = 0; i < num_in; ++i) {
             auto n = sess_.GetInputNameAllocated(i, alloc);
             in_names_.emplace_back(n.get());
@@ -594,7 +595,7 @@ public:
             in_types_.push_back(tsi.GetElementType());
         }
 
-        size_t num_out = sess_.GetOutputCount();
+        const size_t num_out = sess_.GetOutputCount();
         for (size_t i = 0; i < num_out; ++i) {
             auto n = sess_.GetOutputNameAllocated(i, alloc);
             out_names_.emplace_back(n.get());
@@ -611,7 +612,7 @@ public:
         return sess_.Run(Ort::RunOptions{nullptr}, in_ptrs_.data(), in.data(), in.size(), out_ptrs_.data(), out_ptrs_.size());
     }
 
-    void run_with_binding(Ort::IoBinding& binding) {
+    void run_with_binding(const Ort::IoBinding& binding) {
         auto _ = g_prof.time("run:" + name_);
         sess_.Run(Ort::RunOptions{nullptr}, binding);
     }
@@ -631,7 +632,7 @@ public:
         }
     }
 
-    static std::string type_str(ONNXTensorElementDataType t) {
+    static std::string type_str(const ONNXTensorElementDataType t) {
         switch (t) {
             case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT: return "float32";
             case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16: return "float16";
@@ -686,7 +687,7 @@ struct StateBufferIO {
     std::vector<bool> is_dynamic;
     int current_buf = 0;
 
-    void init(OrtSession& s) {
+    void init(const OrtSession& s) {
         const auto& in_names = s.input_names();
         const auto& in_shapes = s.input_shapes();
         const auto& in_types = s.input_types();
@@ -706,7 +707,7 @@ struct StateBufferIO {
             is_dynamic.push_back(dynamic);
 
             size_t sz = 1;
-            for (auto d : sh) sz *= (d > 0 ? d : 1);
+            for (const auto d : sh) sz *= (d > 0 ? d : 1);
             size_t alloc = dynamic ? 0 : sz;
 
             for (int b = 0; b < 2; ++b) {
@@ -740,7 +741,7 @@ struct StateBufferIO {
     // buffer sizes never change between runs.
     void reset() {
         current_buf = 0;
-        size_t n = names.size();
+        const size_t n = names.size();
         for (size_t i = 0; i < n; ++i) {
             for (int b = 0; b < 2; ++b) {
                 if (is_dynamic[i]) {
@@ -756,12 +757,12 @@ struct StateBufferIO {
         }
     }
 
-    Ort::Value create_input_value(size_t state_idx, Ort::MemoryInfo& mem) {
-        auto t = types[state_idx];
+    Ort::Value create_input_value(const size_t state_idx, const Ort::MemoryInfo& mem) {
+        const auto t = types[state_idx];
         // FP16 KV caches use single-buffered mode (always buffer 0) to enable
         // in-place scatter — ORT skips the bulk copy when src == dst.
-        int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : in_buf();
-        auto& sh = shapes[state_idx];
+        const int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : in_buf();
+        const auto& sh = shapes[state_idx];
         if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
             return Ort::Value::CreateTensor<int64_t>(mem, i64[b][state_idx].data(), i64[b][state_idx].size(),
                                                       sh.data(), sh.size());
@@ -777,10 +778,10 @@ struct StateBufferIO {
         }
     }
 
-    Ort::Value create_output_value(size_t state_idx, Ort::MemoryInfo& mem) {
-        auto t = types[state_idx];
-        int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : out_buf();
-        auto& sh = shapes[state_idx];
+    Ort::Value create_output_value(const size_t state_idx, const Ort::MemoryInfo& mem) {
+        const auto t = types[state_idx];
+        const int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : out_buf();
+        const auto& sh = shapes[state_idx];
         if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
             return Ort::Value::CreateTensor<int64_t>(mem, i64[b][state_idx].data(), i64[b][state_idx].size(),
                                                       sh.data(), sh.size());
@@ -796,12 +797,12 @@ struct StateBufferIO {
         }
     }
 
-    void copy_from_output(size_t state_idx, Ort::Value& val) {
-        auto t = types[state_idx];
-        int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : out_buf();
-        auto info = val.GetTensorTypeAndShapeInfo();
+    void copy_from_output(const size_t state_idx, const Ort::Value& val) {
+        const auto t = types[state_idx];
+        const int b = (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) ? 0 : out_buf();
+        const auto info = val.GetTensorTypeAndShapeInfo();
         shapes[state_idx] = info.GetShape();
-        size_t out_size = info.GetElementCount();
+        const size_t out_size = info.GetElementCount();
 
         if (t == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
             auto* src = val.GetTensorData<int64_t>();
@@ -828,12 +829,12 @@ struct StateBufferIO {
         static constexpr uint32_t MAGIC = 0x3143564B;  // "KVC1" little-endian
 
         bool save_to_disk(const std::string& path) const {
-            size_t slash = path.find_last_of('/');
+            const size_t slash = path.find_last_of('/');
             if (slash != std::string::npos) cache::mkdir_p(path.substr(0, slash));
             std::ofstream f(path, std::ios::binary);
             if (!f) return false;
-            uint32_t magic = MAGIC;
-            uint64_t sz = blob.size();
+            constexpr uint32_t magic = MAGIC;
+            const uint64_t sz = blob.size();
             f.write(reinterpret_cast<const char*>(&magic), 4);
             f.write(reinterpret_cast<const char*>(&sz), 8);
             f.write(reinterpret_cast<const char*>(blob.data()), blob.size());
@@ -869,13 +870,13 @@ struct StateBufferIO {
         std::vector<size_t> b8_offsets;
         std::vector<size_t> f16_offsets;
         std::vector<std::vector<int64_t>> shapes;
-        int current_buf;
+        int current_buf{};
     };
 
     Snapshot take_snapshot() const {
         Snapshot snap;
-        int b = in_buf();
-        size_t n = names.size();
+        const int b = in_buf();
+        const size_t n = names.size();
         snap.shapes.resize(n);
         snap.current_buf = current_buf;
 
@@ -885,8 +886,8 @@ struct StateBufferIO {
         std::vector<SliceInfo> slices(n, {-1, -1});
 
         for (size_t i = 0; i < n; ++i) {
-            bool is_f32 = types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT && f32[b][i].size() >= 10000;
-            bool is_f16 = types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 && f16[0][i].size() >= 10000;
+            const bool is_f32 = types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT && f32[b][i].size() >= 10000;
+            const bool is_f16 = types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 && f16[0][i].size() >= 10000;
             if (!is_f32 && !is_f16) continue;
 
             int seq_dim = -1;
@@ -912,7 +913,7 @@ struct StateBufferIO {
                 sh[slices[i].seq_dim] = slices[i].used;
                 snap.shapes[i] = sh;
                 size_t numel = 1;
-                for (auto d : sh) numel *= (d > 0 ? d : 1);
+                for (const auto d : sh) numel *= (d > 0 ? d : 1);
                 if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) total_f16 += numel;
                 else total_f32 += numel;
             } else {
@@ -941,14 +942,14 @@ struct StateBufferIO {
             snap.f16_offsets[i] = ho;
 
             if (slices[i].seq_dim >= 0) {
-                int sd = slices[i].seq_dim;
-                int64_t N = slices[i].used;
+                const int sd = slices[i].seq_dim;
+                const int64_t N = slices[i].used;
                 int64_t outer = 1;
                 for (int d = 0; d < sd; ++d) outer *= shapes[i][d];
                 int64_t inner = 1;
                 for (size_t d = sd + 1; d < shapes[i].size(); ++d) inner *= shapes[i][d];
-                int64_t old_stride = shapes[i][sd] * inner;
-                int64_t new_stride = N * inner;
+                const int64_t old_stride = shapes[i][sd] * inner;
+                const int64_t new_stride = N * inner;
 
                 if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
                     const uint16_t* src = f16[0][i].data();
@@ -981,22 +982,21 @@ struct StateBufferIO {
 
     void restore_snapshot(const Snapshot& snap) {
         current_buf = snap.current_buf;
-        int b = in_buf();
-        size_t n = names.size();
+        const int b = in_buf();
+        const size_t n = names.size();
 
         for (size_t i = 0; i < n; ++i) {
-            size_t f32_off = snap.f32_offsets[i], f32_end = snap.f32_offsets[i + 1];
-            size_t f16_off = snap.f16_offsets[i], f16_end = snap.f16_offsets[i + 1];
-            size_t i64_off = snap.i64_offsets[i], i64_end = snap.i64_offsets[i + 1];
-            size_t b8_off  = snap.b8_offsets[i],  b8_end  = snap.b8_offsets[i + 1];
+            const size_t f32_off = snap.f32_offsets[i], f32_end = snap.f32_offsets[i + 1];
+            const size_t f16_off = snap.f16_offsets[i], f16_end = snap.f16_offsets[i + 1];
+            const size_t i64_off = snap.i64_offsets[i], i64_end = snap.i64_offsets[i + 1];
+            const size_t b8_off  = snap.b8_offsets[i],  b8_end  = snap.b8_offsets[i + 1];
 
-            bool has_f32 = f32_end > f32_off;
-            bool has_f16 = f16_end > f16_off;
-            bool sliced = (snap.shapes[i] != init_shapes[i]) && (has_f32 || has_f16);
+            const bool has_f32 = f32_end > f32_off;
+            const bool has_f16 = f16_end > f16_off;
 
-            if (sliced) {
+            if (snap.shapes[i] != init_shapes[i] && (has_f32 || has_f16)) {
                 size_t full_size = 1;
-                for (auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
+                for (const auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
 
                 int sd = -1;
                 for (size_t d = 0; d < init_shapes[i].size(); ++d) {
@@ -1006,13 +1006,13 @@ struct StateBufferIO {
                 if (has_f16) {
                     f16[0][i].resize(full_size);
                     if (sd >= 0) {
-                        int64_t N = snap.shapes[i][sd];
+                        const int64_t N = snap.shapes[i][sd];
                         int64_t outer = 1;
                         for (int d = 0; d < sd; ++d) outer *= init_shapes[i][d];
                         int64_t inner = 1;
                         for (size_t d = sd + 1; d < init_shapes[i].size(); ++d) inner *= init_shapes[i][d];
-                        int64_t full_stride = init_shapes[i][sd] * inner;
-                        int64_t slice_stride = N * inner;
+                        const int64_t full_stride = init_shapes[i][sd] * inner;
+                        const int64_t slice_stride = N * inner;
                         const uint16_t* src = snap.f16_data.data() + f16_off;
                         uint16_t* dst = f16[0][i].data();
                         for (int64_t o = 0; o < outer; ++o)
@@ -1021,13 +1021,13 @@ struct StateBufferIO {
                 } else {
                     f32[b][i].resize(full_size);
                     if (sd >= 0) {
-                        int64_t N = snap.shapes[i][sd];
+                        const int64_t N = snap.shapes[i][sd];
                         int64_t outer = 1;
                         for (int d = 0; d < sd; ++d) outer *= init_shapes[i][d];
                         int64_t inner = 1;
                         for (size_t d = sd + 1; d < init_shapes[i].size(); ++d) inner *= init_shapes[i][d];
-                        int64_t full_stride = init_shapes[i][sd] * inner;
-                        int64_t slice_stride = N * inner;
+                        const int64_t full_stride = init_shapes[i][sd] * inner;
+                        const int64_t slice_stride = N * inner;
                         const float* src = snap.f32_data.data() + f32_off;
                         float* dst = f32[b][i].data();
                         for (int64_t o = 0; o < outer; ++o)
@@ -1048,14 +1048,14 @@ struct StateBufferIO {
 
     DiskSnapshot snapshot_to_disk(const Snapshot& snap) const {
         DiskSnapshot ds;
-        size_t n = names.size();
+        const size_t n = names.size();
 
         size_t total = 8;
         for (size_t i = 0; i < n; ++i) {
-            size_t f32_count = snap.f32_offsets[i + 1] - snap.f32_offsets[i];
-            size_t f16_count = snap.f16_offsets[i + 1] - snap.f16_offsets[i];
-            size_t i64_count = snap.i64_offsets[i + 1] - snap.i64_offsets[i];
-            size_t b8_count = snap.b8_offsets[i + 1] - snap.b8_offsets[i];
+            const size_t f32_count = snap.f32_offsets[i + 1] - snap.f32_offsets[i];
+            const size_t f16_count = snap.f16_offsets[i + 1] - snap.f16_offsets[i];
+            const size_t i64_count = snap.i64_offsets[i + 1] - snap.i64_offsets[i];
+            const size_t b8_count = snap.b8_offsets[i + 1] - snap.b8_offsets[i];
             total += 4 + snap.shapes[i].size() * 8 + 4 + 8;
             if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) total += i64_count * 8;
             else if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL) total += b8_count;
@@ -1065,22 +1065,22 @@ struct StateBufferIO {
 
         ds.blob.resize(total);
         uint8_t* p = ds.blob.data();
-        auto write = [&](const void* src, size_t bytes) { memcpy(p, src, bytes); p += bytes; };
+        auto write = [&](const void* src, const size_t bytes) { memcpy(p, src, bytes); p += bytes; };
 
-        int32_t cb = snap.current_buf, ns = static_cast<int32_t>(n);
+        const int32_t cb = snap.current_buf, ns = static_cast<int32_t>(n);
         write(&cb, 4); write(&ns, 4);
 
         for (size_t i = 0; i < n; ++i) {
             int32_t ndims = static_cast<int32_t>(snap.shapes[i].size());
-            int32_t type = static_cast<int32_t>(types[i]);
+            int32_t type = types[i];
             write(&ndims, 4);
             write(snap.shapes[i].data(), ndims * 8);
             write(&type, 4);
 
-            size_t f32_count = snap.f32_offsets[i + 1] - snap.f32_offsets[i];
-            size_t f16_count = snap.f16_offsets[i + 1] - snap.f16_offsets[i];
-            size_t i64_count = snap.i64_offsets[i + 1] - snap.i64_offsets[i];
-            size_t b8_count = snap.b8_offsets[i + 1] - snap.b8_offsets[i];
+            const size_t f32_count = snap.f32_offsets[i + 1] - snap.f32_offsets[i];
+            const size_t f16_count = snap.f16_offsets[i + 1] - snap.f16_offsets[i];
+            const size_t i64_count = snap.i64_offsets[i + 1] - snap.i64_offsets[i];
+            const size_t b8_count = snap.b8_offsets[i + 1] - snap.b8_offsets[i];
 
             int64_t data_bytes;
             if (types[i] == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
@@ -1102,12 +1102,12 @@ struct StateBufferIO {
 
     void restore_from_disk(const DiskSnapshot& ds) {
         const uint8_t* p = ds.blob.data();
-        auto read = [&](void* dst, size_t bytes) { memcpy(dst, p, bytes); p += bytes; };
+        auto read = [&](void* dst, const size_t bytes) { memcpy(dst, p, bytes); p += bytes; };
 
         int32_t cb, ns;
         read(&cb, 4); read(&ns, 4);
         current_buf = cb;
-        int b = in_buf();
+        const int b = in_buf();
 
         for (int32_t i = 0; i < ns; ++i) {
             int32_t ndims, type;
@@ -1119,7 +1119,7 @@ struct StateBufferIO {
             read(&data_bytes, 8);
 
             if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
-                size_t count = data_bytes / 8;
+                const size_t count = data_bytes / 8;
                 auto* src = reinterpret_cast<const int64_t*>(p);
                 i64[b][i].assign(src, src + count);
                 p += data_bytes;
@@ -1127,23 +1127,22 @@ struct StateBufferIO {
                 b8[b][i].assign(p, p + data_bytes);
                 p += data_bytes;
             } else if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
-                bool sliced = !init_shapes.empty() && loaded_shape != init_shapes[i];
-                if (sliced) {
+                if (!init_shapes.empty() && loaded_shape != init_shapes[i]) {
                     size_t full_size = 1;
-                    for (auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
+                    for (const auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
                     f16[0][i].resize(full_size);
                     int sd = -1;
                     for (size_t d = 0; d < init_shapes[i].size(); ++d) {
                         if (loaded_shape[d] != init_shapes[i][d]) { sd = static_cast<int>(d); break; }
                     }
                     if (sd >= 0) {
-                        int64_t N = loaded_shape[sd];
+                        const int64_t N = loaded_shape[sd];
                         int64_t outer = 1;
                         for (int d = 0; d < sd; ++d) outer *= init_shapes[i][d];
                         int64_t inner = 1;
                         for (size_t d = sd + 1; d < init_shapes[i].size(); ++d) inner *= init_shapes[i][d];
-                        int64_t full_stride = init_shapes[i][sd] * inner;
-                        int64_t slice_stride = N * inner;
+                        const int64_t full_stride = init_shapes[i][sd] * inner;
+                        const int64_t slice_stride = N * inner;
                         const uint16_t* src = reinterpret_cast<const uint16_t*>(p);
                         uint16_t* dst = f16[0][i].data();
                         for (int64_t o = 0; o < outer; ++o)
@@ -1151,29 +1150,28 @@ struct StateBufferIO {
                     }
                     p += data_bytes;
                 } else {
-                    size_t count = data_bytes / 2;
+                    const size_t count = data_bytes / 2;
                     auto* src = reinterpret_cast<const uint16_t*>(p);
                     f16[0][i].assign(src, src + count);
                     p += data_bytes;
                 }
             } else {
-                bool sliced = !init_shapes.empty() && loaded_shape != init_shapes[i];
-                if (sliced) {
+                if (bool sliced = !init_shapes.empty() && loaded_shape != init_shapes[i]) {
                     size_t full_size = 1;
-                    for (auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
+                    for (const auto d : init_shapes[i]) full_size *= (d > 0 ? d : 1);
                     f32[b][i].resize(full_size);
                     int sd = -1;
                     for (size_t d = 0; d < init_shapes[i].size(); ++d) {
                         if (loaded_shape[d] != init_shapes[i][d]) { sd = static_cast<int>(d); break; }
                     }
                     if (sd >= 0) {
-                        int64_t N = loaded_shape[sd];
+                        const int64_t N = loaded_shape[sd];
                         int64_t outer = 1;
                         for (int d = 0; d < sd; ++d) outer *= init_shapes[i][d];
                         int64_t inner = 1;
                         for (size_t d = sd + 1; d < init_shapes[i].size(); ++d) inner *= init_shapes[i][d];
-                        int64_t full_stride = init_shapes[i][sd] * inner;
-                        int64_t slice_stride = N * inner;
+                        const int64_t full_stride = init_shapes[i][sd] * inner;
+                        const int64_t slice_stride = N * inner;
                         const float* src = reinterpret_cast<const float*>(p);
                         float* dst = f32[b][i].data();
                         for (int64_t o = 0; o < outer; ++o)
@@ -1181,7 +1179,7 @@ struct StateBufferIO {
                     }
                     p += data_bytes;
                 } else {
-                    size_t count = data_bytes / 4;
+                    const size_t count = data_bytes / 4;
                     auto* src = reinterpret_cast<const float*>(p);
                     f32[b][i].assign(src, src + count);
                     p += data_bytes;
@@ -1253,7 +1251,7 @@ public:
         // Build fixup entries for each fp16 cache
         for (auto& l : layers) {
             for (size_t idx : {l.k, l.v}) {
-                FP16Fixup f;
+                FP16Fixup f{};
                 f.output_idx = state_to_output[idx];
                 f.state_idx = idx;
                 f.step_state_idx = l.step;
@@ -1338,16 +1336,16 @@ public:
             if (ort_ptr != our_ptr) {
                 // ORT used internal buffer. Copy the written positions.
                 // old_step is still in in_buf (pre-swap), new_step in out_buf.
-                int64_t old_step = state_.i64[state_.in_buf()][f.step_state_idx][0];
-                int64_t new_step = state_.i64[state_.out_buf()][f.step_state_idx][0];
-                int64_t L = new_step - old_step;
-                int64_t start = ((old_step % f.capacity) + f.capacity) % f.capacity;
+                const int64_t old_step = state_.i64[state_.in_buf()][f.step_state_idx][0];
+                const int64_t new_step = state_.i64[state_.out_buf()][f.step_state_idx][0];
+                const int64_t L = new_step - old_step;
+                const int64_t start = ((old_step % f.capacity) + f.capacity) % f.capacity;
                 if (start + L <= f.capacity) {
                     std::memcpy(our_ptr + start * f.per_pos,
                                 ort_ptr + start * f.per_pos,
                                 L * f.per_pos * sizeof(uint16_t));
                 } else {
-                    int64_t first = f.capacity - start;
+                    const int64_t first = f.capacity - start;
                     std::memcpy(our_ptr + start * f.per_pos,
                                 ort_ptr + start * f.per_pos,
                                 first * f.per_pos * sizeof(uint16_t));
@@ -1378,7 +1376,7 @@ class Tokenizer {
     sentencepiece::SentencePieceProcessor proc_;
 public:
     explicit Tokenizer(const std::string& path) {
-        auto s = proc_.Load(path);
+        const auto s = proc_.Load(path);
         if (!s.ok()) throw std::runtime_error("Failed to load tokenizer: " + s.ToString());
     }
     std::vector<int> encode(const std::string& text) const {
@@ -1406,15 +1404,15 @@ public:
         // the AR generator and Mimi decoder run simultaneously, so we split the
         // budget between them. Non-pipelined models (encoder, text conditioner)
         // get the full budget since they run alone.
-        int cores = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
-        int total = cfg_.num_threads ? cfg_.num_threads : std::max(2, cores / 2);
+        const int cores = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+        const int total = cfg_.num_threads ? cfg_.num_threads : std::max(2, cores / 2);
         // Balance threads so gen thread and decoder thread finish at roughly the same time.
         // AR is compute-dense per step; decoder has fewer but heavier calls.
-        int threads_dec = std::max(1, total / 2);
-        int threads_ar = std::max(1, total - threads_dec);
-        int threads_full = total;
+        const int threads_dec = std::max(1, total / 2);
+        const int threads_ar = std::max(1, total - threads_dec);
+        const int threads_full = total;
 
-        auto make_opts = [](int threads) {
+        auto make_opts = [](const int threads) {
             Ort::SessionOptions opts;
             opts.SetIntraOpNumThreads(threads);
             opts.SetInterOpNumThreads(1);
@@ -1427,7 +1425,7 @@ public:
         // so a single large allocation permanently inflates RSS.
         //   - mimi_encoder: processes up to 720k float samples on cache miss
         //   - mimi_decoder: reset per sentence during streaming
-        auto make_opts_no_arena = [](int threads) {
+        auto make_opts_no_arena = [](const int threads) {
             Ort::SessionOptions opts;
             opts.SetIntraOpNumThreads(threads);
             opts.SetInterOpNumThreads(1);
@@ -1447,7 +1445,7 @@ public:
             std::cout << "  ORT Version: " << OrtGetApiBase()->GetVersionString() << "\n";
             std::cout << "  Thread budget: " << total << " (AR: " << threads_ar
                       << ", decoder: " << threads_dec << ", full: " << threads_full << ")\n";
-            auto providers = Ort::GetAvailableProviders();
+            const auto providers = Ort::GetAvailableProviders();
             std::cout << "  Execution Providers: ";
             for (size_t i = 0; i < providers.size(); ++i) {
                 if (i > 0) std::cout << ", ";
@@ -1457,7 +1455,7 @@ public:
         }
 
         auto& env = get_ort_env();
-        std::string sfx = cfg_.precision == "int8" ? "_int8" : "";
+        const std::string sfx = cfg_.precision == "int8" ? "_int8" : "";
 
         enc_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/mimi_encoder.onnx", opts_enc, "mimi_encoder");
         txt_ = std::make_unique<OrtSession>(env, cfg_.models_dir + "/text_conditioner.onnx", opts_full, "text_conditioner");
@@ -1490,8 +1488,7 @@ public:
 
         // Detect format from extension
         std::string ext;
-        size_t dot = path.rfind('.');
-        if (dot != std::string::npos) {
+        if (const size_t dot = path.rfind('.'); dot != std::string::npos) {
             ext = path.substr(dot);
             for (auto& c : ext) c = std::tolower(static_cast<unsigned char>(c));
         }
@@ -1534,7 +1531,7 @@ public:
             mono = resample(mono, sr, SR);
         }
 
-        float mx = *std::max_element(mono.begin(), mono.end(), [](float a, float b) { return std::abs(a) < std::abs(b); });
+        const float mx = *std::max_element(mono.begin(), mono.end(), [](const float a, const float b) { return std::abs(a) < std::abs(b); });
         if (std::abs(mx) > 1) for (auto& s : mono) s /= std::abs(mx);
 
         return {std::move(mono), SR};
@@ -1543,7 +1540,7 @@ public:
     static void save_audio(const AudioData& a, const std::string& path) {
         auto _ = g_prof.time("save_audio");
         drwav w;
-        drwav_data_format fmt{drwav_container_riff, DR_WAVE_FORMAT_IEEE_FLOAT, 1, static_cast<drwav_uint32>(a.sample_rate), 32};
+        const drwav_data_format fmt{drwav_container_riff, DR_WAVE_FORMAT_IEEE_FLOAT, 1, static_cast<drwav_uint32>(a.sample_rate), 32};
         if (!drwav_init_file_write(&w, path.c_str(), &fmt, nullptr))
             throw std::runtime_error("Failed to write: " + path);
         drwav_write_pcm_frames(&w, a.samples.size(), a.samples.data());
@@ -1552,7 +1549,7 @@ public:
 
     // ── Voice Encoding ──────────────────────────────────────────────────────
 
-    Tensor encode_voice(const std::string& path) {
+    Tensor encode_voice(const std::string& path) const {
         auto timer = g_prof.time("encode_voice");
 
         if (cfg_.voice_cache) {
@@ -1566,7 +1563,7 @@ public:
                     if (cfg_.verbose) {
                         std::cerr << "  Loaded cached embedding: " << cache_path << "\n";
                     }
-                    return Tensor(std::move(data), std::move(shape));
+                    return {std::move(data), std::move(shape)};
                 }
             }
         }
@@ -1612,26 +1609,26 @@ public:
 
     // ── Public API ──────────────────────────────────────────────────────────
 
-    AudioData generate(const std::string& text, const std::string& voice, int max_frames = 500) {
+    AudioData generate(const std::string& text, const std::string& voice, const int max_frames = 500) {
         return generate(text, get_voice(voice), max_frames);
     }
 
     AudioData generate(const std::string& text, const Tensor& voice, int max_frames = 500);
-    void stream(const std::string& text, const std::string& voice, StreamCallback cb, int max_frames = 500);
-    void stream(const std::string& text, const Tensor& voice, StreamCallback cb, int max_frames = 500);
+    void stream(const std::string& text, const std::string& voice, const StreamCallback &cb, int max_frames = 500);
+    void stream(const std::string& text, const Tensor& voice, const StreamCallback& cb, int max_frames = 500);
     const Config& config() const { return cfg_; }
 
     double warmup() {
-        auto start = std::chrono::high_resolution_clock::now();
+        const auto start = std::chrono::high_resolution_clock::now();
         Tensor dummy_voice({1, 8, 1024});
         std::fill(dummy_voice.data.begin(), dummy_voice.data.end(), 0.0f);
         stream("Hi.", dummy_voice, [](const float*, size_t) { return true; }, 1);
-        auto end = std::chrono::high_resolution_clock::now();
+        const auto end = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(end - start).count();
     }
 
-    void print_profiling_report() const { g_prof.report(); }
-    void reset_profiling() { g_prof.reset(); }
+    static void print_profiling_report() { g_prof.report(); }
+    static void reset_profiling() { g_prof.reset(); }
 
 private:
     Config cfg_;
@@ -1652,26 +1649,26 @@ private:
 
     const Tensor& get_voice(const std::string& p) {
         voice_kv_path_ = p;
-        auto it = vcache_.find(p);
+        const auto it = vcache_.find(p);
         if (it != vcache_.end()) return it->second;
 
-        std::string resolved = resolve_voice_path(p);
+        const std::string resolved = resolve_voice_path(p);
         return vcache_[p] = encode_voice(resolved);
     }
 
     // ── Tokenization ────────────────────────────────────────────────────────
 
-    TensorI64 tokenize(const std::string& text) {
+    TensorI64 tokenize(const std::string& text) const {
         auto _ = g_prof.time("tokenize");
         std::string t = text;
-        size_t s = t.find_first_not_of(" \t\n\r");
-        size_t e = t.find_last_not_of(" \t\n\r");
+        const size_t s = t.find_first_not_of(" \t\n\r");
+        const size_t e = t.find_last_not_of(" \t\n\r");
         if (s == std::string::npos) throw std::runtime_error("Empty text");
         t = t.substr(s, e - s + 1);
         if (std::isalnum(static_cast<unsigned char>(t.back()))) t += ".";
         if (!t.empty() && std::islower(static_cast<unsigned char>(t[0]))) t[0] = std::toupper(static_cast<unsigned char>(t[0]));
 
-        auto ids = tok_->encode(t);
+        const auto ids = tok_->encode(t);
         if (cfg_.verbose) std::cerr << "  Tokens: " << ids.size() << " from " << t.size() << " chars\n";
         TensorI64 r({1, static_cast<int64_t>(ids.size())});
         for (size_t i = 0; i < ids.size(); ++i) r.data[i] = ids[i];
@@ -1710,7 +1707,7 @@ private:
 
         std::vector<float> s_buf_{1}, t_buf_{1};
 
-        void cond_pass(const float* d, size_t sz, const std::vector<int64_t>& sh) {
+        void cond_pass(const float* d, const size_t sz, const std::vector<int64_t>& sh) const {
             std::vector<Ort::Value> inputs;
             inputs.push_back(Ort::Value::CreateTensor<float>(m_, nullptr, 0, empty_seq_shape_, 3));
             inputs.push_back(Ort::Value::CreateTensor<float>(m_, const_cast<float*>(d), sz, sh.data(), sh.size()));
@@ -1721,10 +1718,10 @@ private:
         using Snapshot = StatefulRunner::Snapshot;
 
         // Full path: voice conditioning → (optional snapshot) → text conditioning
-        LatentGen(PocketTTS& t, const Tensor& v, const TensorI64& tid, int max, int eos_extra, Snapshot* out_voice_snap = nullptr)
+        LatentGen(PocketTTS& t, const Tensor& v, const TensorI64& tid, const int max, const int eos_extra, Snapshot* out_voice_snap = nullptr)
             : tts(t), max_(max), eos_extra_(eos_extra), m_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
-              fx_(32, 0), cl_(32, std::numeric_limits<float>::quiet_NaN()),
-              main_runner_(*tts.main_runner_) {
+              main_runner_(*tts.main_runner_), fx_(32, 0),
+              cl_(32, std::numeric_limits<float>::quiet_NaN()) {
             temp_ = std::sqrt(tts.cfg_.temperature);
             flow_inputs_.reserve(4);
 
@@ -1734,11 +1731,11 @@ private:
                 auto _ = g_prof.time("text_conditioning");
                 std::vector<Ort::Value> in;
                 in.push_back(Ort::Value::CreateTensor<int64_t>(m_, const_cast<int64_t*>(tid.ptr()), tid.numel(), tid.shape.data(), tid.shape.size()));
-                auto out = tts.txt_->run(in);
+                const auto out = tts.txt_->run(in);
 
                 auto sh = out[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t n = 1;
-                for (auto d : sh) n *= d;
+                for (const auto d : sh) n *= d;
                 temb_.assign(out[0].GetTensorData<float>(), out[0].GetTensorData<float>() + n);
                 tsh_.assign(sh.begin(), sh.end());
                 if (tsh_.size() == 2) tsh_.insert(tsh_.begin(), 1);
@@ -1758,10 +1755,10 @@ private:
         }
 
         // Cached path: restore KV snapshot → text conditioning only
-        LatentGen(PocketTTS& t, const Snapshot& voice_snap, const TensorI64& tid, int max, int eos_extra)
+        LatentGen(PocketTTS& t, const Snapshot& voice_snap, const TensorI64& tid, const int max, const int eos_extra)
             : tts(t), max_(max), eos_extra_(eos_extra), m_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
-              fx_(32, 0), cl_(32, std::numeric_limits<float>::quiet_NaN()),
-              main_runner_(*tts.main_runner_) {
+              main_runner_(*tts.main_runner_), fx_(32, 0),
+              cl_(32, std::numeric_limits<float>::quiet_NaN()) {
             temp_ = std::sqrt(tts.cfg_.temperature);
             flow_inputs_.reserve(4);
 
@@ -1769,11 +1766,11 @@ private:
                 auto _ = g_prof.time("text_conditioning");
                 std::vector<Ort::Value> in;
                 in.push_back(Ort::Value::CreateTensor<int64_t>(m_, const_cast<int64_t*>(tid.ptr()), tid.numel(), tid.shape.data(), tid.shape.size()));
-                auto out = tts.txt_->run(in);
+                const auto out = tts.txt_->run(in);
 
                 auto sh = out[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t n = 1;
-                for (auto d : sh) n *= d;
+                for (const auto d : sh) n *= d;
                 temb_.assign(out[0].GetTensorData<float>(), out[0].GetTensorData<float>() + n);
                 tsh_.assign(sh.begin(), sh.end());
                 if (tsh_.size() == 2) tsh_.insert(tsh_.begin(), 1);
@@ -1803,11 +1800,11 @@ private:
                 inputs.push_back(Ort::Value::CreateTensor<float>(m_, cl_.data(), cl_.size(), curr_shape_, 3));
                 inputs.push_back(Ort::Value::CreateTensor<float>(m_, nullptr, 0, empty_text_shape_, 3));
 
-                auto outputs = main_runner_.run(inputs);
+                const auto outputs = main_runner_.run(inputs);
 
                 auto csh = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
                 size_t cn = 1;
-                for (auto d : csh) cn *= d;
+                for (const auto d : csh) cn *= d;
                 cond_.assign(outputs[0].GetTensorData<float>(), outputs[0].GetTensorData<float>() + cn);
                 csh_.assign(csh.begin(), csh.end());
 
@@ -1822,7 +1819,7 @@ private:
             if (eos_) {
                 if (++extra_ > eos_extra_) {
                     done_ = true;
-                    return Tensor();
+                    return {};
                 }
             }
 
@@ -1830,7 +1827,7 @@ private:
                 auto _ = g_prof.time("frame:rng");
                 if (temp_ > 0) {
                     rng::fill_normal(fx_.data(), 32, 0, temp_);
-                    float nc = tts.cfg_.noise_clamp;
+                    const float nc = tts.cfg_.noise_clamp;
                     if (nc > 0) for (auto& v : fx_) v = std::max(-nc, std::min(nc, v));
                 }
                 else std::fill(fx_.begin(), fx_.end(), 0.0f);
@@ -1881,7 +1878,7 @@ private:
 
     static uint64_t voice_hash(const Tensor& v) {
         uint64_t h = 14695981039346656037ull;
-        int n = std::min(16, static_cast<int>(v.data.size()));
+        const int n = std::min(16, static_cast<int>(v.data.size()));
         for (int i = 0; i < n; ++i) {
             uint32_t bits;
             memcpy(&bits, &v.data[i], sizeof(bits));
@@ -1892,24 +1889,24 @@ private:
     }
 
     LatentGen make_gen(const Tensor& v, const TensorI64& t, int max, int eos_extra) {
-        uint64_t vh = voice_hash(v);
+        const uint64_t vh = voice_hash(v);
 
         // Tier 1: in-memory cache hit
         if (voice_kv_snap_ && voice_kv_hash_ == vh) {
-            return LatentGen(*this, *voice_kv_snap_, t, max, eos_extra);
+            return {*this, *voice_kv_snap_, t, max, eos_extra};
         }
 
         // Tier 2: disk cache hit
         if (cfg_.voice_cache && !voice_kv_path_.empty()) {
-            std::string kv_path = cache::get_cache_path(cfg_.voices_dir, voice_kv_path_, "kv");
-            std::string resolved = resolve_voice_path(voice_kv_path_);
+            const std::string kv_path = cache::get_cache_path(cfg_.voices_dir, voice_kv_path_, "kv");
+            const std::string resolved = resolve_voice_path(voice_kv_path_);
             StateBufferIO::DiskSnapshot ds;
             if (cache::is_cache_valid(resolved, kv_path) && ds.load_from_disk(kv_path)) {
                 if (cfg_.verbose) std::cerr << "  Loaded KV cache: " << kv_path << "\n";
                 main_runner_->restore_from_disk(ds);
                 voice_kv_snap_ = std::make_unique<VoiceKVSnapshot>(main_runner_->take_snapshot());
                 voice_kv_hash_ = vh;
-                return LatentGen(*this, *voice_kv_snap_, t, max, eos_extra);
+                return {*this, *voice_kv_snap_, t, max, eos_extra};
             }
         }
 
@@ -1920,8 +1917,8 @@ private:
         voice_kv_hash_ = vh;
 
         if (cfg_.voice_cache && !voice_kv_path_.empty()) {
-            std::string kv_path = cache::get_cache_path(cfg_.voices_dir, voice_kv_path_, "kv");
-            auto ds = main_runner_->snapshot_to_disk(*voice_kv_snap_);
+            const std::string kv_path = cache::get_cache_path(cfg_.voices_dir, voice_kv_path_, "kv");
+            const auto ds = main_runner_->snapshot_to_disk(*voice_kv_snap_);
             if (ds.save_to_disk(kv_path)) {
                 if (cfg_.verbose) std::cerr << "  Saved KV cache: " << kv_path << "\n";
             }
@@ -1931,16 +1928,9 @@ private:
     }
 };
 
-// Required for C++17 ODR-use of constexpr static members
-constexpr int64_t PocketTTS::LatentGen::curr_shape_[3];
-constexpr int64_t PocketTTS::LatentGen::empty_text_shape_[3];
-constexpr int64_t PocketTTS::LatentGen::empty_seq_shape_[3];
-constexpr int64_t PocketTTS::LatentGen::s_shape_[2];
-constexpr int64_t PocketTTS::LatentGen::x_shape_[2];
-
 // ── Out-of-line method definitions ──────────────────────────────────────────
 
-AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int max_frames) {
+AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, const int max_frames) {
     auto _ = g_prof.time("generate_total");
 
     auto sentences = split_sentences(text);
@@ -1949,7 +1939,7 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
     if (sentences.size() == 1) {
         std::vector<float> samples;
         samples.reserve(max_frames * 2000);
-        stream(sentences[0], voice, [&](const float* s, size_t n) {
+        stream(sentences[0], voice, [&](const float* s, const size_t n) {
             samples.insert(samples.end(), s, s + n);
             return true;
         }, max_frames);
@@ -1969,7 +1959,7 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
         }
 
         std::vector<float> chunk_samples;
-        stream(sentences[i], voice, [&](const float* s, size_t n) {
+        stream(sentences[i], voice, [&](const float* s, const size_t n) {
             chunk_samples.insert(chunk_samples.end(), s, s + n);
             return true;
         }, max_frames);
@@ -1977,10 +1967,10 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
         if (chunk_samples.empty()) continue;
 
         if (i > 0 && !all_samples.empty()) {
-            int xfade = std::min(XFADE_SAMPLES, std::min(static_cast<int>(all_samples.size()), static_cast<int>(chunk_samples.size())));
-            size_t tail_start = all_samples.size() - xfade;
+            const int xfade = std::min(XFADE_SAMPLES, std::min(static_cast<int>(all_samples.size()), static_cast<int>(chunk_samples.size())));
+            const size_t tail_start = all_samples.size() - xfade;
             for (int j = 0; j < xfade; ++j) {
-                float t = static_cast<float>(j) / static_cast<float>(xfade);
+                const float t = static_cast<float>(j) / static_cast<float>(xfade);
                 all_samples[tail_start + j] = all_samples[tail_start + j] * (1.0f - t) + chunk_samples[j] * t;
             }
             all_samples.insert(all_samples.end(), chunk_samples.begin() + xfade, chunk_samples.end());
@@ -1992,11 +1982,11 @@ AudioData PocketTTS::generate(const std::string& text, const Tensor& voice, int 
     return {std::move(all_samples), SR};
 }
 
-void PocketTTS::stream(const std::string& text, const std::string& voice, StreamCallback cb, int max_frames) {
+void PocketTTS::stream(const std::string& text, const std::string& voice, const StreamCallback &cb, const int max_frames) {
     stream(text, get_voice(voice), cb, max_frames);
 }
 
-void PocketTTS::stream(const std::string& text, const Tensor& voice, StreamCallback cb, int max_frames) {
+void PocketTTS::stream(const std::string& text, const Tensor& voice, const StreamCallback& cb, int max_frames) {
     auto sentences = split_sentences(text);
     if (sentences.empty()) sentences.push_back(text);
 
@@ -2097,30 +2087,30 @@ struct HttpRequest {
     std::string path;
     std::string body;
 
-    static HttpRequest parse(ptt_socket_t client_fd) {
+    static HttpRequest parse(const ptt_socket_t client_fd) {
         HttpRequest req;
         std::string data;
         char buf[4096];
 
         while (true) {
-            ssize_t n = recv(client_fd, buf, (int)sizeof(buf), 0);
+            ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
             if (n <= 0) break;
             data.append(buf, n);
 
-            size_t header_end = data.find("\r\n\r\n");
+            const size_t header_end = data.find("\r\n\r\n");
             if (header_end != std::string::npos) {
                 // Case-insensitive search for Content-Length header
                 std::string lower_data = data.substr(0, header_end);
                 for (auto& c : lower_data) c = std::tolower(static_cast<unsigned char>(c));
-                size_t cl_pos = lower_data.find("content-length:");
+                const size_t cl_pos = lower_data.find("content-length:");
 
                 if (cl_pos != std::string::npos) {
-                    size_t cl_end = data.find("\r\n", cl_pos);
-                    int content_length = std::stoi(data.substr(cl_pos + 15, cl_end - cl_pos - 15));
-                    size_t body_start = header_end + 4;
+                    const size_t cl_end = data.find("\r\n", cl_pos);
+                    const int content_length = std::stoi(data.substr(cl_pos + 15, cl_end - cl_pos - 15));
+                    const size_t body_start = header_end + 4;
 
                     while (data.size() < body_start + content_length) {
-                        n = recv(client_fd, buf, (int)sizeof(buf), 0);
+                        n = recv(client_fd, buf, sizeof(buf), 0);
                         if (n <= 0) break;
                         data.append(buf, n);
                     }
@@ -2129,18 +2119,18 @@ struct HttpRequest {
             }
         }
 
-        size_t line_end = data.find("\r\n");
+        const size_t line_end = data.find("\r\n");
         if (line_end != std::string::npos) {
             std::string line = data.substr(0, line_end);
-            size_t sp1 = line.find(' ');
-            size_t sp2 = line.find(' ', sp1 + 1);
+            const size_t sp1 = line.find(' ');
+            const size_t sp2 = line.find(' ', sp1 + 1);
             if (sp1 != std::string::npos && sp2 != std::string::npos) {
                 req.method = line.substr(0, sp1);
                 req.path = line.substr(sp1 + 1, sp2 - sp1 - 1);
             }
         }
 
-        size_t body_start = data.find("\r\n\r\n");
+        const size_t body_start = data.find("\r\n\r\n");
         if (body_start != std::string::npos) {
             req.body = data.substr(body_start + 4);
         }
@@ -2246,7 +2236,7 @@ class TTSServer {
     std::mutex tts_mutex_;
 
 public:
-    TTSServer(PocketTTS& tts, int port) : tts_(tts), port_(port) {}
+    TTSServer(PocketTTS& tts, const int port) : tts_(tts), port_(port) {}
 
     ~TTSServer() {
         if (server_fd_ != PTT_INVALID_SOCKET && server_fd_ == g_server_fd) {
@@ -2274,8 +2264,8 @@ public:
         }
         g_server_fd = server_fd_;
 
-        int opt = 1;
-        setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+        constexpr int opt = 1;
+        setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
@@ -2307,14 +2297,14 @@ public:
             sockaddr_in client_addr{};
             socklen_t client_len = sizeof(client_addr);
 
-            ptt_socket_t client_fd = accept(server_fd_, reinterpret_cast<sockaddr *>(&client_addr), &client_len);
+            const ptt_socket_t client_fd = accept(server_fd_, reinterpret_cast<sockaddr *>(&client_addr), &client_len);
             if (client_fd == PTT_INVALID_SOCKET) break;
 
 #ifdef _WIN32
             DWORD tv = 30000;  // milliseconds
             setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 #else
-            struct timeval tv;
+            timeval tv{};
             tv.tv_sec = 30;
             tv.tv_usec = 0;
             setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -2326,14 +2316,14 @@ public:
     }
 
 private:
-    static bool ptt_send(ptt_socket_t fd, const void* data, size_t len) {
+    static bool ptt_send(const ptt_socket_t fd, const void* data, size_t len) {
         int flags = 0;
 #ifdef MSG_NOSIGNAL
         flags |= MSG_NOSIGNAL;
 #endif
         const char* ptr = static_cast<const char*>(data);
         while (len > 0) {
-            ssize_t sent = send(fd, ptr, static_cast<int>(len), flags);
+            const ssize_t sent = send(fd, ptr, static_cast<int>(len), flags);
             if (sent <= 0) return false;
             ptr += sent;
             len -= static_cast<size_t>(sent);
@@ -2341,8 +2331,8 @@ private:
         return true;
     }
 
-    void send_response(ptt_socket_t fd, int status, const std::string& content_type, const std::string& body) {
-        std::string status_text = (status == 200) ? "OK" : (status == 404) ? "Not Found" : "Bad Request";
+    static void send_response(const ptt_socket_t fd, const int status, const std::string& content_type, const std::string& body) {
+        const std::string status_text = (status == 200) ? "OK" : (status == 404) ? "Not Found" : "Bad Request";
         std::ostringstream resp;
         resp << "HTTP/1.1 " << status << " " << status_text << "\r\n";
         resp << "Content-Type: " << content_type << "\r\n";
@@ -2353,15 +2343,15 @@ private:
         resp << "\r\n";
         resp << body;
 
-        std::string data = resp.str();
+        const std::string data = resp.str();
         ptt_send(fd, data.c_str(), data.size());
     }
 
-    void send_binary_response(ptt_socket_t fd, const std::string& content_type, const std::vector<uint8_t>& body) {
+    static void send_binary_response(const ptt_socket_t fd, const std::string& content_type, const std::vector<uint8_t>& body) {
         send_binary_response(fd, content_type, body.data(), body.size());
     }
 
-    void send_binary_response(ptt_socket_t fd, const std::string& content_type, const void* data, size_t len) {
+    static void send_binary_response(const ptt_socket_t fd, const std::string& content_type, const void* data, const size_t len) {
         std::ostringstream resp;
         resp << "HTTP/1.1 200 OK\r\n";
         resp << "Content-Type: " << content_type << "\r\n";
@@ -2370,20 +2360,20 @@ private:
         resp << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
         resp << "\r\n";
 
-        std::string header = resp.str();
+        const std::string header = resp.str();
         ptt_send(fd, header.c_str(), header.size());
         ptt_send(fd, data, len);
     }
 
     // Encode float PCM samples as a WAV file in memory
-    static std::vector<uint8_t> wav_encode(const float* samples, size_t count, int sample_rate) {
-        uint32_t data_size = count * sizeof(float);
-        uint32_t file_size = 36 + data_size;
+    static std::vector<uint8_t> wav_encode(const float* samples, const size_t count, const int sample_rate) {
+        const uint32_t data_size = count * sizeof(float);
+        const uint32_t file_size = 36 + data_size;
 
         std::vector<uint8_t> buf(44 + data_size);
-        auto w = [&](size_t off, const void* src, size_t n) { memcpy(buf.data() + off, src, n); };
-        auto w32 = [&](size_t off, uint32_t v) { memcpy(buf.data() + off, &v, 4); };
-        auto w16 = [&](size_t off, uint16_t v) { memcpy(buf.data() + off, &v, 2); };
+        auto w = [&](const size_t off, const void* src, const size_t n) { memcpy(buf.data() + off, src, n); };
+        auto w32 = [&](const size_t off, const uint32_t v) { memcpy(buf.data() + off, &v, 4); };
+        auto w16 = [&](const size_t off, const uint16_t v) { memcpy(buf.data() + off, &v, 2); };
 
         w(0, "RIFF", 4);
         w32(4, file_size);
@@ -2403,7 +2393,7 @@ private:
         return buf;
     }
 
-    bool send_chunked_header(ptt_socket_t fd, const std::string& content_type) {
+    static bool send_chunked_header(const ptt_socket_t fd, const std::string& content_type) {
         std::ostringstream resp;
         resp << "HTTP/1.1 200 OK\r\n";
         resp << "Content-Type: " << content_type << "\r\n";
@@ -2411,11 +2401,11 @@ private:
         resp << "Access-Control-Allow-Origin: *\r\n";
         resp << "\r\n";
 
-        std::string data = resp.str();
+        const std::string data = resp.str();
         return ptt_send(fd, data.c_str(), data.size());
     }
 
-    bool send_chunk(ptt_socket_t fd, const void* data, size_t len) {
+    static bool send_chunk(const ptt_socket_t fd, const void* data, const size_t len) {
         char size_buf[32];
         snprintf(size_buf, sizeof(size_buf), "%zx\r\n", len);
         if (!ptt_send(fd, size_buf, strlen(size_buf))) return false;
@@ -2423,7 +2413,7 @@ private:
         return ptt_send(fd, "\r\n", 2);
     }
 
-    bool send_final_chunk(ptt_socket_t fd) {
+    static bool send_final_chunk(const ptt_socket_t fd) {
         return ptt_send(fd, "0\r\n\r\n", 5);
     }
 
@@ -2431,7 +2421,7 @@ private:
         auto req = HttpRequest::parse(client_fd);
 
         char client_ip[INET_ADDRSTRLEN];
-        sockaddr_in addr;
+        sockaddr_in addr{};
         socklen_t len = sizeof(addr);
         getpeername(client_fd, reinterpret_cast<sockaddr *>(&addr), &len);
         inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
@@ -2443,14 +2433,14 @@ private:
         }
 
         if (req.method == "GET" && req.path == "/health") {
-            send_response(client_fd, 200, "application/json", "{\"status\":\"ok\"}");
+            send_response(client_fd, 200, "application/json", R"({"status":"ok"})");
         }
         else if (req.method == "POST" && req.path == "/tts") {
             std::string text = json_get_string(req.body, "text");
             std::string voice = json_get_string(req.body, "voice");
 
             if (text.empty() || voice.empty()) {
-                send_response(client_fd, 400, "application/json", "{\"error\":\"Missing text or voice\"}");
+                send_response(client_fd, 400, "application/json", R"({"error":"Missing text or voice"})");
                 return;
             }
 
@@ -2466,10 +2456,10 @@ private:
 
                 {
                     std::lock_guard<std::mutex> lock(tts_mutex_);
-                    tts_.stream(text, voice, [&](const float* samples, size_t n) {
+                    tts_.stream(text, voice, [&](const float* samples, const size_t n) {
                         if (first_chunk) {
-                            auto now = std::chrono::high_resolution_clock::now();
-                            double latency = std::chrono::duration<double, std::milli>(now - start).count();
+                            const auto now = std::chrono::high_resolution_clock::now();
+                            const double latency = std::chrono::duration<double, std::milli>(now - start).count();
                             std::cout << "  First chunk latency: " << std::fixed << std::setprecision(0) << latency << "ms\n";
                             first_chunk = false;
                         }
@@ -2493,7 +2483,7 @@ private:
                 double duration = static_cast<double>(total_samples) / PocketTTS::SR;
                 std::cout << "  Done: " << std::fixed << std::setprecision(2) << duration << "s audio in " << elapsed << "s (RTFx: " << duration/elapsed << "x)\n";
             } catch (const std::exception& e) {
-                send_response(client_fd, 400, "application/json", "{\"error\":\"" + std::string(e.what()) + "\"}");
+                send_response(client_fd, 400, "application/json", R"({"error":")" + std::string(e.what()) + "\"}");
             }
         }
         else if (req.method == "POST" && req.path == "/v1/audio/speech") {
@@ -2507,13 +2497,13 @@ private:
 
             if (text.empty() || voice.empty()) {
                 send_response(client_fd, 400, "application/json",
-                    "{\"error\":{\"message\":\"Missing 'input' or 'voice'\",\"type\":\"invalid_request_error\"}}");
+                    R"({"error":{"message":"Missing 'input' or 'voice'","type":"invalid_request_error"}})");
                 return;
             }
 
             if (format != "wav" && format != "pcm") {
                 send_response(client_fd, 400, "application/json",
-                    "{\"error\":{\"message\":\"Unsupported response_format. Use 'wav' or 'pcm'.\",\"type\":\"invalid_request_error\"}}");
+                    R"({"error":{"message":"Unsupported response_format. Use 'wav' or 'pcm'.","type":"invalid_request_error"}})");
                 return;
             }
 
@@ -2541,11 +2531,11 @@ private:
                 }
             } catch (const std::exception& e) {
                 send_response(client_fd, 400, "application/json",
-                    "{\"error\":{\"message\":\"" + std::string(e.what()) + "\",\"type\":\"server_error\"}}");
+                    R"({"error":{"message":")" + std::string(e.what()) + R"(","type":"server_error"}})");
             }
         }
         else {
-            send_response(client_fd, 404, "application/json", "{\"error\":\"Not found\"}");
+            send_response(client_fd, 404, "application/json", R"({"error":"Not found"})");
         }
     }
 };
@@ -2560,7 +2550,7 @@ extern "C" {
 
 void* ptt_create(const char* models_dir, const char* voices_dir,
                  const char* tokenizer_path, const char* precision,
-                 int num_threads) {
+                 const int num_threads) {
     try {
         pocket_tts::Config cfg;
         if (models_dir) cfg.models_dir = models_dir;
@@ -2594,10 +2584,10 @@ void ptt_destroy(void* handle) {
 }
 
 int ptt_generate(
-    void* handle, const char* text, const char* voice, uint64_t seed,
-    float temperature, int lsd_steps, float eos_threshold, float noise_clamp,
-    int first_chunk_frames, int max_chunk_frames, int eos_extra_frames,
-    bool verbose, bool voice_cache, float** out_samples, int* out_len,
+    void* handle, const char* text, const char* voice, const uint64_t seed,
+    const float temperature, const int lsd_steps, const float eos_threshold, const float noise_clamp,
+    const int first_chunk_frames, const int max_chunk_frames, const int eos_extra_frames,
+    const bool verbose, const bool voice_cache, float** out_samples, int* out_len,
     const char* output_path
 ) {
     if (!handle || !text || !voice || !out_samples || !out_len) return 0;
@@ -2617,7 +2607,7 @@ int ptt_generate(
         cfg.verbose = verbose;
         cfg.voice_cache = voice_cache;
 
-        pocket_tts::AudioData audio = tts->generate(text, voice);
+        const pocket_tts::AudioData audio = tts->generate(text, voice);
         *out_len = static_cast<int>(audio.samples.size());
         *out_samples = static_cast<float *>(malloc(sizeof(float) * audio.samples.size()));
 
@@ -2626,7 +2616,7 @@ int ptt_generate(
         std::memcpy(*out_samples, audio.samples.data(), sizeof(float) * audio.samples.size());
         if (output_path) pocket_tts::PocketTTS::save_audio(audio, output_path);
         return 1;
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         return 0;
     }
 }
@@ -2643,10 +2633,10 @@ struct ptt_stream_ctx {
 };
 
 void* ptt_stream_start(
-    void* handle, const char* text, const char* voice, uint64_t seed,
-    float temperature, int lsd_steps, float eos_threshold, float noise_clamp,
-    int first_chunk_frames, int max_chunk_frames, int eos_extra_frames,
-    bool verbose, bool voice_cache
+    void* handle, const char* text, const char* voice, const uint64_t seed,
+    const float temperature, const int lsd_steps, const float eos_threshold, const float noise_clamp,
+    const int first_chunk_frames, const int max_chunk_frames, const int eos_extra_frames,
+    const bool verbose, const bool voice_cache
 ) {
     if (!handle || !text || !voice) return nullptr;
 
@@ -2731,7 +2721,7 @@ void ptt_stream_end(void* stream_ctx) {
 
 #ifndef PTT_SHARED_LIB
 
-static void signal_handler(int sig) {
+static void signal_handler(const int sig) {
     (void)sig;
     pocket_tts::g_server_running = false;
     if (pocket_tts::g_server_fd != PTT_INVALID_SOCKET) {
@@ -2845,7 +2835,7 @@ int main(int argc, char* argv[]) {
             server.run();
         }
         else {
-            tts.reset_profiling();
+            pocket_tts::PocketTTS::reset_profiling();
 
             if (!stdout_output) {
                 std::cerr << "Generating: \"" << text << "\" with " << voice << "\n";
@@ -2861,7 +2851,7 @@ int main(int argc, char* argv[]) {
 #endif
                 size_t total_samples = 0;
                 bool first = true;
-                tts.stream(text, voice, [&](const float* s, size_t n) {
+                tts.stream(text, voice, [&](const float* s, const size_t n) {
                     if (first) {
                         first_chunk_latency = std::chrono::duration<double, std::milli>(
                             std::chrono::high_resolution_clock::now() - t0).count();
@@ -2878,7 +2868,7 @@ int main(int argc, char* argv[]) {
                 if (pocket_tts::g_prof.enabled) {
                     std::vector<float> samples;
                     bool first = true;
-                    tts.stream(text, voice, [&](const float* s, size_t n) {
+                    tts.stream(text, voice, [&](const float* s, const size_t n) {
                         if (first) {
                             first_chunk_latency = std::chrono::duration<double, std::milli>(
                                 std::chrono::high_resolution_clock::now() - t0).count();
@@ -2915,7 +2905,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (pocket_tts::g_prof.enabled) {
-                tts.print_profiling_report();
+                pocket_tts::PocketTTS::print_profiling_report();
             }
         }
 
