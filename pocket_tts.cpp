@@ -1404,41 +1404,36 @@ public:
         // the AR generator and Mimi decoder run simultaneously, so we split the
         // budget between them. Non-pipelined models (encoder, text conditioner)
         // get the full budget since they run alone.
-        const int cores = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
-        const int total = cfg_.num_threads ? cfg_.num_threads : std::max(2, cores / 2);
+        const int total = resolve_threads(cfg_.num_threads);
         // Balance threads so gen thread and decoder thread finish at roughly the same time.
         // AR is compute-dense per step; decoder has fewer but heavier calls.
         const int threads_dec = std::max(1, total / 2);
         const int threads_ar = std::max(1, total - threads_dec);
         const int threads_full = total;
 
-        auto make_opts = [](const int threads) {
+        auto make_opts = [](const int threads, const bool no_arena) {
             Ort::SessionOptions opts;
             opts.SetIntraOpNumThreads(threads);
             opts.SetInterOpNumThreads(1);
-            opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+            opts.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+
+            // Arena disabled for sessions with large or variable-size inputs that
+            // run infrequently — ORT's arena never releases memory back to the OS,
+            // so a single large allocation permanently inflates RSS.
+            //   - mimi_encoder: processes up to 720k float samples on cache miss
+            //   - mimi_decoder: reset per sentence during streaming
+            if (no_arena) {
+                opts.DisableMemPattern();
+                opts.DisableCpuMemArena();
+            }
+
             return opts;
         };
 
-        // Arena disabled for sessions with large or variable-size inputs that
-        // run infrequently — ORT's arena never releases memory back to the OS,
-        // so a single large allocation permanently inflates RSS.
-        //   - mimi_encoder: processes up to 720k float samples on cache miss
-        //   - mimi_decoder: reset per sentence during streaming
-        auto make_opts_no_arena = [](const int threads) {
-            Ort::SessionOptions opts;
-            opts.SetIntraOpNumThreads(threads);
-            opts.SetInterOpNumThreads(1);
-            opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-            opts.DisableMemPattern();
-            opts.DisableCpuMemArena();
-            return opts;
-        };
-
-        auto opts_full = make_opts(threads_full);
-        auto opts_ar = make_opts(threads_ar);
-        auto opts_enc = make_opts_no_arena(threads_full);
-        auto opts_dec = make_opts_no_arena(threads_dec);
+        auto opts_full = make_opts(threads_full, false);
+        auto opts_ar = make_opts(threads_ar, false);
+        auto opts_enc = make_opts(threads_full, true);
+        auto opts_dec = make_opts(threads_dec, true);
 
         if (cfg_.verbose) {
             std::cout << "\n========== ONNX RUNTIME INFO ==========\n";
@@ -1479,6 +1474,10 @@ public:
             dec_->print_info();
             std::cerr << "================================\n";
         }
+    }
+
+    static int resolve_threads(const int n) {
+        return std::max(1, n != -1 ? n : static_cast<int>(std::thread::hardware_concurrency()) / 2);
     }
 
     // ── Audio I/O ───────────────────────────────────────────────────────────
@@ -2806,7 +2805,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        int threads = cfg.num_threads ? cfg.num_threads : std::max(2, static_cast<int>(std::thread::hardware_concurrency()) / 2);
+        int threads = pocket_tts::PocketTTS::resolve_threads(cfg.num_threads);
 
         if (!stdout_output) {
             std::cerr << "Loading (precision=" << cfg.precision << ", threads=" << threads << ")...\n";
