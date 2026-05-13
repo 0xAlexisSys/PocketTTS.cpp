@@ -1461,12 +1461,7 @@ public:
         main_runner_ = std::make_unique<StatefulRunner>(*main_);
         dec_runner_ = std::make_unique<StatefulRunner>(*dec_);
 
-        dt_ = 1.0f / cfg_.lsd_steps;
-        st_values_.reserve(cfg_.lsd_steps);
-        for (int j = 0; j < cfg_.lsd_steps; ++j) {
-            float s = static_cast<float>(j) / cfg_.lsd_steps;
-            st_values_.emplace_back(s, s + dt_);
-        }
+        update_lsd_steps();
 
         if (cfg_.verbose) {
             std::cerr << "\n========== MODEL INFO ==========\n";
@@ -1624,6 +1619,16 @@ public:
         stream("Hi.", dummy_voice, [](const float*, size_t) { return true; }, 1);
         const auto end = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(end - start).count();
+    }
+
+    void update_lsd_steps() {
+        dt_ = 1.0f / cfg_.lsd_steps;
+        st_values_.clear();
+        st_values_.reserve(cfg_.lsd_steps);
+        for (int j = 0; j < cfg_.lsd_steps; ++j) {
+            float s = static_cast<float>(j) / cfg_.lsd_steps;
+            st_values_.emplace_back(s, s + dt_);
+        }
     }
 
     static void print_profiling_report() { g_prof.report(); }
@@ -2592,8 +2597,6 @@ int ptt_generate(
     if (!handle || !text || !voice || !out_samples || !out_len) return 0;
 
     try {
-        pocket_tts::rng::set_seed(seed);
-
         auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
         pocket_tts::Config& cfg = tts->config();
         cfg.temperature = temperature;
@@ -2605,6 +2608,9 @@ int ptt_generate(
         cfg.eos_extra_frames = eos_extra_frames;
         cfg.verbose = verbose;
         cfg.voice_cache = voice_cache;
+
+        pocket_tts::rng::set_seed(seed);
+        tts->update_lsd_steps();
 
         const pocket_tts::AudioData audio = tts->generate(text, voice);
         *out_len = static_cast<int>(audio.samples.size());
@@ -2639,8 +2645,6 @@ void* ptt_stream_start(
 ) {
     if (!handle || !text || !voice) return nullptr;
 
-    pocket_tts::rng::set_seed(seed);
-
     auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
     pocket_tts::Config& cfg = tts->config();
     cfg.temperature = temperature;
@@ -2652,6 +2656,9 @@ void* ptt_stream_start(
     cfg.eos_extra_frames = eos_extra_frames;
     cfg.verbose = verbose;
     cfg.voice_cache = voice_cache;
+
+    pocket_tts::rng::set_seed(seed);
+    tts->update_lsd_steps();
 
     auto* ctx = new ptt_stream_ctx();
 
